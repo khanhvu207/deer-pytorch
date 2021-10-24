@@ -181,11 +181,6 @@ class NN:
 
             def forward(self, x):
                 init_state = x[:, : self.internal_dim]
-                # x = torch.tanh(self.lin1(x))
-                # x = torch.tanh(self.lin2(x))
-                # x = torch.tanh(self.lin3(x))
-                # x = torch.tanh(self.lin4(x))
-                # x = self.lin5(x)
                 x = self.deep_fc_encoder(x)
                 return x + init_state
 
@@ -304,16 +299,8 @@ class NN:
                     self.gate,
                     nn.Linear(20, 1),
                 )
-                # self.lin1 = nn.Linear(internal_dim + n_actions, 10)
-                # self.lin2 = nn.Linear(10, 50)
-                # self.lin3 = nn.Linear(50, 20)
-                # self.lin4 = nn.Linear(20, 1)
 
             def forward(self, x):
-                # x = torch.tanh(self.lin1(x))
-                # x = torch.tanh(self.lin2(x))
-                # x = torch.tanh(self.lin3(x))
-                # x = self.lin4(x)
                 x = self.deep_fc_encoder(x)
                 return x
 
@@ -378,16 +365,8 @@ class NN:
                     self.gate,
                     nn.Linear(20, n_actions),
                 )
-                # self.lin1 = nn.Linear(internal_dim, 20)
-                # self.lin2 = nn.Linear(20, 50)
-                # self.lin3 = nn.Linear(50, 20)
-                # self.lin4 = nn.Linear(20, n_actions)
 
             def forward(self, x):
-                # x = torch.tanh(self.lin1(x))
-                # x = torch.tanh(self.lin2(x))
-                # x = torch.tanh(self.lin3(x))
-                # x = self.lin4(x)
                 x = self.deep_fc_encoder(x)
                 return x
 
