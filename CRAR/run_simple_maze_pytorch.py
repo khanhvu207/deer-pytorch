@@ -1,8 +1,13 @@
 import os
 import sys
+import json
+import wandb
+import jsons
 import logging
 import numpy as np
 from joblib import hash, dump, load
+
+import torch
 
 from deer.agent import NeuralAgent
 from deer.default_parser import process_args
@@ -18,7 +23,7 @@ class Defaults:
     # Experiment Parameters
     # ----------------------
     STEPS_PER_EPOCH = 5000
-    EPOCHS = 5
+    EPOCHS = 15
     STEPS_PER_TEST = 1000
     PERIOD_BTW_SUMMARY_PERFS = 1
 
@@ -50,7 +55,8 @@ class Defaults:
     DETERMINISTIC = False
 
 
-HIGHER_DIM_OBS = False
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+HIGHER_DIM_OBS = True
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -62,8 +68,13 @@ if __name__ == "__main__":
     else:
         rng = np.random.RandomState()
 
+    # --- Instantiate logger ---
+    logger = wandb.init(
+        mode="online", project="deer", entity="kvu207", config=json.loads(jsons.dumps(Defaults))
+    )
+
     # --- Instantiate environment ---
-    env = simple_maze_env(rng, higher_dim_obs=HIGHER_DIM_OBS)
+    env = simple_maze_env(rng, device, higher_dim_obs=HIGHER_DIM_OBS)
 
     # --- Instantiate learning_algo ---
     learning_algo = CRAR(
@@ -78,6 +89,8 @@ if __name__ == "__main__":
         rng,
         high_int_dim=False,
         internal_dim=2,
+        wandb_logger=logger,
+        device=device
     )
 
     # --- Instantiate agent ---
@@ -85,7 +98,9 @@ if __name__ == "__main__":
         environment=env,
         learning_algo=learning_algo,
         replay_memory_size=parameters.replay_memory_size,
-        replay_start_size=max(env.inputDimensions()[i][0] for i in range(len(env.inputDimensions()))),
+        replay_start_size=max(
+            env.inputDimensions()[i][0] for i in range(len(env.inputDimensions()))
+        ),
         batch_size=parameters.batch_size,
         random_state=rng,
         train_policy=None,

@@ -2,6 +2,7 @@
 Code for the CRAR learning algorithm using Pytorch
 """
 
+from torch._C import device
 from ..base_classes import LearningAlgo
 from .NN_CRAR_pytorch import NN
 
@@ -79,10 +80,13 @@ class CRAR(LearningAlgo):
         random_state=np.random.RandomState(),
         double_Q=False,
         neural_network=NN,
+        wandb_logger=None,
+        device="cpu",
         **kwargs
     ):
         """Initialize the environment"""
         LearningAlgo.__init__(self, environment, batch_size)
+        self.device = device
 
         self._rho = rho
         self._rms_epsilon = rms_epsilon
@@ -95,6 +99,7 @@ class CRAR(LearningAlgo):
         self.update_counter = 0
         self._high_int_dim = kwargs.get("high_int_dim", False)
         self._internal_dim = kwargs.get("internal_dim", 2)
+        self.wandb_logger = wandb_logger
         self.loss_interpret = 0
         self.loss_T = 0
         self.lossR = 0
@@ -112,14 +117,13 @@ class CRAR(LearningAlgo):
             high_int_dim=self._high_int_dim,
             internal_dim=self._internal_dim,
         )
-
-        self.encoder = self.learn_and_plan.encoder_model()
+        self.encoder = self.learn_and_plan.encoder_model().to(self.device)
         self.encoder_diff = self.learn_and_plan.encoder_diff_model
 
-        self.R = self.learn_and_plan.float_model()
-        self.Q = self.learn_and_plan.Q_model()
-        self.gamma = self.learn_and_plan.float_model()
-        self.transition = self.learn_and_plan.transition_model()
+        self.R = self.learn_and_plan.float_model().to(self.device)
+        self.Q = self.learn_and_plan.Q_model().to(self.device)
+        self.gamma = self.learn_and_plan.float_model().to(self.device)
+        self.transition = self.learn_and_plan.transition_model().to(self.device)
 
         self.full_Q = self.learn_and_plan.full_Q_model
 
@@ -153,11 +157,11 @@ class CRAR(LearningAlgo):
             high_int_dim=self._high_int_dim,
             internal_dim=self._internal_dim,
         )
-        self.encoder_target = self.learn_and_plan_target.encoder_model()
-        self.Q_target = self.learn_and_plan_target.Q_model()
-        self.R_target = self.learn_and_plan_target.float_model()
-        self.gamma_target = self.learn_and_plan_target.float_model()
-        self.transition_target = self.learn_and_plan_target.transition_model()
+        self.encoder_target = self.learn_and_plan_target.encoder_model().to(self.device)
+        self.Q_target = self.learn_and_plan_target.Q_model().to(self.device)
+        self.R_target = self.learn_and_plan_target.float_model().to(self.device)
+        self.gamma_target = self.learn_and_plan_target.float_model().to(self.device)
+        self.transition_target = self.learn_and_plan_target.transition_model().to(self.device)
 
         self.full_Q_target = self.learn_and_plan_target.full_Q_model
 
@@ -211,13 +215,13 @@ class CRAR(LearningAlgo):
         states_val = list(states_val)
         next_states_val = list(next_states_val)
 
-        states_val = torch.from_numpy(states_val[0]).float()
-        next_states_val = torch.from_numpy(next_states_val[0]).float()
-        onehot_actions = torch.from_numpy(onehot_actions).float()
+        states_val = torch.from_numpy(states_val[0]).float().to(self.device)
+        next_states_val = torch.from_numpy(next_states_val[0]).float().to(self.device)
+        onehot_actions = torch.from_numpy(onehot_actions).float().to(self.device)
         terminals_val = torch.from_numpy(
             terminals_val[:, None].astype(np.int32)
-        ).float()
-        rewards_val = torch.from_numpy(rewards_val[:, None].astype(np.int32)).float()
+        ).float().to(self.device)
+        rewards_val = torch.from_numpy(rewards_val[:, None].astype(np.int32)).float().to(self.device)
 
         Es_ = self.encoder.predict(next_states_val).detach()
         Es = self.encoder.predict(states_val).detach()
@@ -244,29 +248,28 @@ class CRAR(LearningAlgo):
         )
         loss = torch.nn.MSELoss()
         loss_val = loss(out, torch.zeros_like(Es))
-        self.loss_T += loss_val.data.numpy()
+        self.loss_T += loss_val.data.detach().cpu().numpy()
         loss_val.backward()
-        for param in list(self.transition.parameters()):
-            param.grad.data.clamp_(-1, 1)
+        torch.nn.utils.clip_grad_norm_(self.transition.parameters(), max_norm=1.0)
         self.optimizer_diff_Tx_x_.step()
         
         # Calculate the loss for reward
-        self.optimizer_full_R.zero_grad()
-        out = self.full_R(states_val, onehot_actions, self.encoder, self.R)
-        loss = torch.nn.MSELoss()
-        loss_val = loss(out, rewards_val)
-        self.lossR += loss_val.data.numpy()
+        # self.optimizer_full_R.zero_grad()
+        # out = self.full_R(states_val, onehot_actions, self.encoder, self.R)
+        # loss = torch.nn.MSELoss()
+        # loss_val = loss(out, rewards_val)
+        # self.lossR += loss_val.data.numpy()
         # loss_val.backward()
         # for param in list(self.encoder.parameters()) + list(self.R.parameters()):
             # param.grad.data.clamp_(-1, 1)
         # self.optimizer_full_R.step()
 
         # Calculate loss for gamma
-        self.optimizer_full_gamma.zero_grad()
-        out = self.full_gamma(states_val, onehot_actions, self.encoder, self.gamma)
-        loss = torch.nn.MSELoss()
-        loss_val = loss(out, (1 - terminals_val[:]) * self._df)
-        self.loss_gamma += loss_val.data.numpy()
+        # self.optimizer_full_gamma.zero_grad()
+        # out = self.full_gamma(states_val, onehot_actions, self.encoder, self.gamma)
+        # loss = torch.nn.MSELoss()
+        # loss_val = loss(out, (1 - terminals_val[:]) * self._df)
+        # self.loss_gamma += loss_val.data.numpy()
         # loss_val.backward()
         # for param in list(self.encoder.parameters()) + list(self.gamma.parameters()):
             # param.grad.data.clamp_(-1, 1)
@@ -276,10 +279,9 @@ class CRAR(LearningAlgo):
         self.optimizer_encoder.zero_grad()
         out = self.encoder(states_val)
         loss_val = mean_squared_error_p_pytorch(out)
-        self.loss_disambiguate1 += loss_val.data.numpy()
+        self.loss_disambiguate1 += loss_val.data.detach().cpu().numpy()
         loss_val.backward()
-        for param in list(self.encoder.parameters()):
-            param.grad.data.clamp_(-1, 1)
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
         self.optimizer_encoder.step()
 
         # This one is very important
@@ -291,11 +293,9 @@ class CRAR(LearningAlgo):
         self.optimizer_encoder_diff.zero_grad()
         out = self.encoder_diff(self.encoder, states_val, rolled)
         loss_val = exp_dec_error_pytorch(out)
-
-        self.loss_disambiguate2 += loss_val.data.numpy()
+        self.loss_disambiguate2 += loss_val.data.detach().cpu().numpy()
         loss_val.backward()
-        for param in list(self.encoder.parameters()):
-            param.grad.data.clamp_(-1, 1)
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
         self.optimizer_encoder_diff.step()
 
         # Not so much this one
@@ -303,10 +303,9 @@ class CRAR(LearningAlgo):
         self.optimizer_diff_s_s_.zero_grad()
         out = self.diff_s_s_(self.encoder, states_val, next_states_val)
         loss_val = exp_dec_error_pytorch(out)
-        self.loss_disentangle_t += loss_val.data.numpy()
+        self.loss_disentangle_t += loss_val.data.detach().cpu().numpy()
         loss_val.backward()
-        for param in list(self.encoder.parameters()):
-            param.grad.data.clamp_(-1, 1)
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
         self.optimizer_diff_s_s_.step()
 
         # Q Learning loss
@@ -323,16 +322,16 @@ class CRAR(LearningAlgo):
 
         self.optimizer_full_Q.zero_grad()
         q_vals = self.full_Q(states_val, self.encoder, self.Q).gather(
-            1, torch.from_numpy(actions_val.astype(int)[:, None])
+            1, torch.from_numpy(actions_val.astype(int)[:, None]).to(self.device)
         )
         loss = torch.nn.MSELoss()
         loss_val = loss(q_vals, target)
-        loss = loss_val.data.numpy()
+        loss = loss_val.data.detach().cpu().numpy()
         self.loss_Q += loss
-        # loss_val.backward()
-        # for param in list(self.encoder.parameters()) + list(self.Q.parameters()):
-            # param.grad.data.clamp_(-1, 1)
-        # self.optimizer_full_Q.step()
+        loss_val.backward()
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.Q.parameters(), max_norm=1.0)
+        self.optimizer_full_Q.step()
 
         if self.update_counter % 500 == 0:
             print(
@@ -351,6 +350,17 @@ class CRAR(LearningAlgo):
             if self._high_int_dim == False:
                 print("self.loss_interpret/500.")
                 print(self.loss_interpret / 500.0)
+            
+            self.wandb_logger.log({
+                "loss_T": self.loss_T / 500.0,
+                "loss_R": self.lossR / 500.0,
+                "loss_gamma": self.loss_gamma / 500.0,
+                "loss_Q": self.loss_Q / 500.0,
+                "loss_disentangle_t": self.loss_disentangle_t / 500.0,
+                "loss_disambiguate1": self.loss_disambiguate1 / 500.0,
+                "loss_disambiguate2": self.loss_disambiguate2 / 500.0,
+                "loss_interpret": self.loss_interpret / 500.0
+            })
 
             self.lossR = 0
             self.loss_gamma = 0
@@ -364,6 +374,7 @@ class CRAR(LearningAlgo):
 
         if self.update_counter % 100 == 0:
             print("Number of training steps:" + str(self.update_counter) + ".")
+            self.wandb_logger.log({"nr. of training steps": self.update_counter})
 
         self.update_counter += 1
 
@@ -471,6 +482,7 @@ class CRAR(LearningAlgo):
         -------
         The average q values with planning depth up to d for the provided pseudo-state
         """
+        state_val = state_val.to(self.device)
         encoded_x = self.encoder.predict(state_val)
         QD_plan = 0
 

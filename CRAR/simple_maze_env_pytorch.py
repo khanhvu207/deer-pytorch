@@ -23,8 +23,8 @@ import copy
 class MyEnv(Environment):
     VALIDATION_MODE = 0
 
-    def __init__(self, rng, **kwargs):
-
+    def __init__(self, rng, device, **kwargs):
+        self.device = device
         self._mode = -1
         self._mode_score = 0.0
         self._mode_episode_count = 0
@@ -139,10 +139,8 @@ class MyEnv(Environment):
 
         all_possib_inp = np.expand_dims(np.array(all_possib_inp, dtype="float"), axis=1)
 
-        all_possib_inp = torch.from_numpy(all_possib_inp).float()
+        all_possib_inp = torch.from_numpy(all_possib_inp).float().to(self.device)
         all_possib_abs_states = learning_algo.encoder.predict(all_possib_inp)
-        # if(all_possib_abs_states.ndim==4):
-        #     all_possib_abs_states=np.transpose(all_possib_abs_states, (0, 3, 1, 2))    # data_format='channels_last' --> 'channels_first'
 
         n = 1000
         historics = []
@@ -150,10 +148,8 @@ class MyEnv(Environment):
             historics.append(np.expand_dims(observ, axis=0))
         historics = np.array(historics)
 
-        historics = torch.from_numpy(historics).float()
+        historics = torch.from_numpy(historics).float().to(self.device)
         abs_states = learning_algo.encoder.predict(historics)
-        # if(abs_states.ndim==4):
-        #     abs_states=np.transpose(abs_states, (0, 3, 1, 2))    # data_format='channels_last' --> 'channels_first'
 
         actions = test_data_set.actions()[0:n]
 
@@ -168,8 +164,8 @@ class MyEnv(Environment):
 
         m = cm.ScalarMappable(cmap=cm.jet)
 
-        abs_states = abs_states.detach().numpy()
-        all_possib_abs_states = all_possib_abs_states.detach().numpy()
+        abs_states = abs_states.detach().cpu().numpy()
+        all_possib_abs_states = all_possib_abs_states.detach().cpu().numpy()
 
         x = np.array(abs_states)[:, 0]
         y = np.array(abs_states)[:, 1]
@@ -198,9 +194,10 @@ class MyEnv(Environment):
                             torch.from_numpy(np.array([[1, 0, 0, 0]])).float(),
                         ),
                         -1,
-                    )
+                    ).to(self.device)
                 )
                 .detach()
+                .cpu()
                 .numpy()
             )
             predicted2 = (
@@ -211,9 +208,10 @@ class MyEnv(Environment):
                             torch.from_numpy(np.array([[0, 1, 0, 0]])).float(),
                         ),
                         -1,
-                    )
+                    ).to(self.device)
                 )
                 .detach()
+                .cpu()
                 .numpy()
             )
             predicted3 = (
@@ -224,9 +222,10 @@ class MyEnv(Environment):
                             torch.from_numpy(np.array([[0, 0, 1, 0]])).float(),
                         ),
                         -1,
-                    )
+                    ).to(self.device)
                 )
                 .detach()
+                .cpu()
                 .numpy()
             )
             predicted4 = (
@@ -237,9 +236,10 @@ class MyEnv(Environment):
                             torch.from_numpy(np.array([[0, 0, 0, 1]])).float(),
                         ),
                         -1,
-                    )
+                    ).to(self.device)
                 )
                 .detach()
+                .cpu()
                 .numpy()
             )
             # predicted1=learning_algo.transition.predict([abs_states[i:i+1],np.array([[1,0,0,0]])])
@@ -535,5 +535,5 @@ class MyEnv(Environment):
 
 
 if __name__ == "__main__":
-    env = MyEnv(rng=None, higher_dim_obs=False)
+    env = MyEnv(rng=None, higher_dim_obs=True)
     print(env.observe())

@@ -28,7 +28,7 @@ class NN:
         self._random_state = random_state
         self._n_actions = n_actions
         self._high_int_dim = kwargs["high_int_dim"]
-        
+
         if self._high_int_dim == True:
             self.n_channels_internal_dim = kwargs["internal_dim"]  # dim[-3]
         else:
@@ -53,20 +53,62 @@ class NN:
         class Encoder(nn.Module):
             def __init__(self, internal_dim, input_dim):
                 super(Encoder, self).__init__()
-                self.input_dim_flat = np.prod(input_dim)
-                self.lin1 = nn.Linear(self.input_dim_flat, 200)
-                self.lin2 = nn.Linear(200, 100)
-                self.lin3 = nn.Linear(100, 50)
-                self.lin4 = nn.Linear(50, 10)
-                self.lin5 = nn.Linear(10, internal_dim)
+                self.num_channel, self.h, self.w = input_dim[0]
+                self.gate = nn.Tanh()
+                self.fc_low_dim = nn.Sequential(
+                    nn.Linear(self.num_channel * self.h * self.w, 200), self.gate
+                )
+                self.deep_fc_encoder = nn.Sequential(
+                    nn.Linear(200, 100),
+                    self.gate,
+                    nn.Linear(100, 50),
+                    self.gate,
+                    nn.Linear(50, 10),
+                    self.gate,
+                    nn.Linear(10, internal_dim),
+                )
+                self.conv_encoder = nn.Sequential(
+                    nn.Conv2d(
+                        in_channels=self.num_channel,
+                        out_channels=8,
+                        kernel_size=(2, 2),
+                        padding="same",
+                    ),
+                    self.gate,
+                    nn.Conv2d(
+                        in_channels=8,
+                        out_channels=16,
+                        kernel_size=(2, 2),
+                        padding="same",
+                    ),
+                    self.gate,
+                    nn.MaxPool2d(kernel_size=2),
+                    nn.Conv2d(
+                        in_channels=16,
+                        out_channels=32,
+                        kernel_size=(3, 3),
+                        padding="same",
+                    ),
+                    self.gate,
+                    nn.MaxPool2d(kernel_size=3),
+                )
+                self.flatten_dim_after_conv = (
+                    32 * (self.h // 2 // 3) * (self.w // 2 // 3)
+                )
+                self.fc_after_conv = nn.Sequential(
+                    nn.Linear(self.flatten_dim_after_conv, 200), self.gate
+                )
 
             def forward(self, x):
-                x = x.view(-1, self.input_dim_flat)
-                x = torch.tanh(self.lin1(x))
-                x = torch.tanh(self.lin2(x))
-                x = torch.tanh(self.lin3(x))
-                x = torch.tanh(self.lin4(x))
-                x = self.lin5(x)
+                if self.h <= 12 and self.w <= 12:
+                    x = torch.flatten(x, start_dim=1)
+                    x = self.fc_low_dim(x)
+                    x = self.deep_fc_encoder(x)
+                else:
+                    x = self.conv_encoder(x)
+                    x = torch.flatten(x, start_dim=1)
+                    x = self.fc_after_conv(x)
+                    x = self.deep_fc_encoder(x)
                 return x
 
             def predict(self, s):
@@ -123,155 +165,34 @@ class NN:
         class Transition(nn.Module):
             def __init__(self, internal_dim, n_actions):
                 super(Transition, self).__init__()
-                self.lin1 = nn.Linear(internal_dim + n_actions, 10)
-                self.lin2 = nn.Linear(10, 30)
-                self.lin3 = nn.Linear(30, 30)
-                self.lin4 = nn.Linear(30, 10)
-                self.lin5 = nn.Linear(10, internal_dim)
-
+                self.gate = nn.Tanh()
+                self.deep_fc_encoder = nn.Sequential(
+                    nn.Linear(internal_dim + n_actions, 10),
+                    self.gate,
+                    nn.Linear(10, 30),
+                    self.gate,
+                    nn.Linear(30, 30),
+                    self.gate,
+                    nn.Linear(30, 10),
+                    self.gate,
+                    nn.Linear(10, internal_dim),
+                )
                 self.internal_dim = internal_dim
 
             def forward(self, x):
                 init_state = x[:, : self.internal_dim]
-                x = torch.tanh(self.lin1(x))
-                x = torch.tanh(self.lin2(x))
-                x = torch.tanh(self.lin3(x))
-                x = torch.tanh(self.lin4(x))
-                x = self.lin5(x)
-                return x + init_state
-
-            def predict(self, x):
-                return self.forward(x)
-
-        class MLP(nn.Module):
-            """Two-layer fully-connected ELU net with batch norm."""
-
-            def __init__(self, n_in, n_hid, n_out, do_prob=0.0):
-                super(MLP, self).__init__()
-                self.fc1 = nn.Linear(n_in, n_hid)
-                self.fc2 = nn.Linear(n_hid, n_out)
-                # self.bn = nn.BatchNorm1d(n_out)
-                self.dropout_prob = do_prob
-
-                self.init_weights()
-
-            def init_weights(self):
-                for m in self.modules():
-                    if isinstance(m, nn.Linear):
-                        nn.init.xavier_normal_(m.weight.data)
-                        m.bias.data.fill_(0.1)
-                    elif isinstance(m, nn.BatchNorm1d):
-                        m.weight.data.fill_(1)
-                        m.bias.data.zero_()
-
-            def batch_norm(self, inputs):
-                x = inputs.view(inputs.size(0) * inputs.size(1), -1)
-                x = self.bn(x)
-                return x.view(inputs.size(0), inputs.size(1), -1)
-
-            def forward(self, inputs):
-                # Input shape: [num_sims, num_things, num_features]
-                x = F.elu(self.fc1(inputs))
-                x = F.dropout(x, self.dropout_prob, training=self.training)
-                x = F.elu(self.fc2(x))
-                return x
-
-        # GNN Transition model
-        class TransitionGNN(nn.Module):
-            def __init__(
-                self, internal_dim, n_actions, n_hid, do_prob=0.0, factor=True
-            ):
-                super(TransitionGNN, self).__init__()
-
-                self.internal_dim = internal_dim
-                self.n_actions = n_actions
-
-                n_in = 1
-                n_out = internal_dim
-
-                self.mlp1 = MLP(n_in, n_hid, n_hid, do_prob)
-                self.mlp2 = MLP(n_hid * 2, n_hid, n_hid, do_prob)
-                self.mlp3 = MLP(n_hid, n_hid, n_hid, do_prob)
-                # self.mlp4 = MLP(n_hid * 4, n_hid, n_hid, do_prob)
-                # self.mlp5 = MLP(n_hid, n_hid, n_hid, do_prob)
-                self.fc_out1 = nn.Linear(n_hid * 2 * (internal_dim + n_actions), n_hid)
-                self.fc_out2 = nn.Linear(n_hid, n_out)
-                self.init_weights()
-
-                def encode_onehot(labels):
-                    classes = set(labels)
-                    classes_dict = {
-                        c: np.identity(len(classes))[i, :]
-                        for i, c in enumerate(classes)
-                    }
-                    labels_onehot = np.array(
-                        list(map(classes_dict.get, labels)), dtype=np.int32
-                    )
-                    return labels_onehot
-
-                off_diag = (
-                    np.ones(
-                        [
-                            self.internal_dim + self.n_actions,
-                            self.internal_dim + self.n_actions,
-                        ]
-                    )
-                    - np.eye(self.internal_dim + self.n_actions)
-                )
-                rel_rec = np.array(
-                    encode_onehot(np.where(off_diag)[1]), dtype=np.float32
-                )
-                rel_send = np.array(
-                    encode_onehot(np.where(off_diag)[0]), dtype=np.float32
-                )
-                self.rel_rec = torch.FloatTensor(rel_rec)
-                self.rel_send = torch.FloatTensor(rel_send)
-
-            def init_weights(self):
-                for m in self.modules():
-                    if isinstance(m, nn.Linear):
-                        nn.init.xavier_normal_(m.weight.data)
-                        m.bias.data.fill_(0.1)
-
-            def edge2node(self, x):
-                # NOTE: Assumes that we have the same graph across all samples.
-                incoming = torch.matmul(self.rel_rec.t(), x)
-                return incoming / incoming.size(1)
-
-            def node2edge(self, x):
-                # NOTE: Assumes that we have the same graph across all samples.
-                receivers = torch.matmul(self.rel_rec, x)
-                senders = torch.matmul(self.rel_send, x)
-                edges = torch.cat([receivers, senders], dim=2)
-                return edges
-
-            def forward(self, inputs):
-                # import pdb;pdb.set_trace()
-
-                init_state = inputs[:, : self.internal_dim]
-                x = inputs.view(inputs.size(0), inputs.size(1), 1)
-                x = self.mlp1(x)  # 2-layer ELU net per node
-                x_skip = x
-
-                x = self.node2edge(x)
-                x = self.mlp2(x)
-
-                x = self.edge2node(x)
-                x = self.mlp3(x)
-
-                x = torch.cat((x, x_skip), dim=2)
-
-                x = x.view(x.size(0), -1)
-                x = F.elu(self.fc_out1(x))
-                x = self.fc_out2(x)
+                # x = torch.tanh(self.lin1(x))
+                # x = torch.tanh(self.lin2(x))
+                # x = torch.tanh(self.lin3(x))
+                # x = torch.tanh(self.lin4(x))
+                # x = self.lin5(x)
+                x = self.deep_fc_encoder(x)
                 return x + init_state
 
             def predict(self, x):
                 return self.forward(x)
 
         model = Transition(self.internal_dim, self._n_actions)
-        # model = TransitionGNN(self.internal_dim, self._n_actions, 32)
-
         return model
 
     def diff_Tx_x_(
@@ -373,16 +294,27 @@ class NN:
         class FloatModel(nn.Module):
             def __init__(self, internal_dim, n_actions):
                 super(FloatModel, self).__init__()
-                self.lin1 = nn.Linear(internal_dim + n_actions, 10)
-                self.lin2 = nn.Linear(10, 50)
-                self.lin3 = nn.Linear(50, 20)
-                self.lin4 = nn.Linear(20, 1)
+                self.gate = nn.Tanh()
+                self.deep_fc_encoder = nn.Sequential(
+                    nn.Linear(internal_dim + n_actions, 10),
+                    self.gate,
+                    nn.Linear(10, 50),
+                    self.gate,
+                    nn.Linear(50, 20),
+                    self.gate,
+                    nn.Linear(20, 1),
+                )
+                # self.lin1 = nn.Linear(internal_dim + n_actions, 10)
+                # self.lin2 = nn.Linear(10, 50)
+                # self.lin3 = nn.Linear(50, 20)
+                # self.lin4 = nn.Linear(20, 1)
 
             def forward(self, x):
-                x = torch.tanh(self.lin1(x))
-                x = torch.tanh(self.lin2(x))
-                x = torch.tanh(self.lin3(x))
-                x = self.lin4(x)
+                # x = torch.tanh(self.lin1(x))
+                # x = torch.tanh(self.lin2(x))
+                # x = torch.tanh(self.lin3(x))
+                # x = self.lin4(x)
+                x = self.deep_fc_encoder(x)
                 return x
 
             def predict(self, x):
@@ -436,16 +368,27 @@ class NN:
         class QFunction(nn.Module):
             def __init__(self, internal_dim, n_actions):
                 super(QFunction, self).__init__()
-                self.lin1 = nn.Linear(internal_dim, 20)
-                self.lin2 = nn.Linear(20, 50)
-                self.lin3 = nn.Linear(50, 20)
-                self.lin4 = nn.Linear(20, n_actions)
+                self.gate = nn.Tanh()
+                self.deep_fc_encoder = nn.Sequential(
+                    nn.Linear(internal_dim, 20),
+                    self.gate,
+                    nn.Linear(20, 50),
+                    self.gate,
+                    nn.Linear(50, 20),
+                    self.gate,
+                    nn.Linear(20, n_actions),
+                )
+                # self.lin1 = nn.Linear(internal_dim, 20)
+                # self.lin2 = nn.Linear(20, 50)
+                # self.lin3 = nn.Linear(50, 20)
+                # self.lin4 = nn.Linear(20, n_actions)
 
             def forward(self, x):
-                x = torch.tanh(self.lin1(x))
-                x = torch.tanh(self.lin2(x))
-                x = torch.tanh(self.lin3(x))
-                x = self.lin4(x)
+                # x = torch.tanh(self.lin1(x))
+                # x = torch.tanh(self.lin2(x))
+                # x = torch.tanh(self.lin3(x))
+                # x = self.lin4(x)
+                x = self.deep_fc_encoder(x)
                 return x
 
             def predict(self, x):
