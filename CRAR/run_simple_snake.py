@@ -70,7 +70,7 @@ if __name__ == "__main__":
 
     # --- Instantiate logger ---
     logger = wandb.init(
-        mode="online", project="deer", entity="kvu207", config=json.loads(jsons.dumps(Defaults))
+        mode="offline", project="deer", entity="kvu207", config=json.loads(jsons.dumps(Defaults))
     )
 
     # --- Instantiate environment ---
@@ -88,7 +88,7 @@ if __name__ == "__main__":
         parameters.update_rule,
         rng,
         high_int_dim=False,
-        internal_dim=3,
+        internal_dim=2,
         wandb_logger=logger,
         device=device
     )

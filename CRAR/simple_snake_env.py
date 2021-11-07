@@ -31,17 +31,17 @@ class MyEnv(Environment):
         self._size_maze = 8
         self._higher_dim_obs = kwargs["higher_dim_obs"]
         self.create_map()
-        self.intern_dim = 3
+        self.intern_dim = 2
 
     def create_map(self):
         self._map = np.zeros((self._size_maze, self._size_maze))
-        self._map[-1, :] = 1
-        self._map[0, :] = 1
+        self._map[5:, :] = 1
+        self._map[0:3, :] = 1
         # self._map[:, 0] = 1
         # self._map[:, -1] = 1
         # self._map[:, self._size_maze // 2] = 1
         # self._map[self._size_maze // 2, self._size_maze // 2] = 0
-        self._pos_agent = [2, 2]
+        self._pos_agent = [3, 1]
         self._pos_goal = [self._size_maze - 2, self._size_maze - 2]
 
     def reset(self, mode):
@@ -79,20 +79,20 @@ class MyEnv(Environment):
 
         def _modulo(x, base):
             return (x + base) % base
-        
+
         # NOTE: x is vertical axis
         if action == 0:
             new_x = new_x - 1
         elif action == 1:
             new_x = new_x + 1
         elif action == 2:
-            new_y = _modulo(new_y - 1, self._size_maze) # Wrap around!
+            new_y = _modulo(new_y - 1, self._size_maze)  # Wrap around!
         elif action == 3:
-            new_y = _modulo(new_y + 1, self._size_maze) # Wrap around!
-        
+            new_y = _modulo(new_y + 1, self._size_maze)  # Wrap around!
+
         if self._map[new_x, new_y] == 0:
-                self._pos_agent[0] = new_x
-                self._pos_agent[1] = new_y
+            self._pos_agent[0] = new_x
+            self._pos_agent[1] = new_y
 
         # There is no reward in this simple environment
         reward = 0
@@ -365,8 +365,8 @@ class MyEnv(Environment):
             self._pos_agent
             obs = self.get_higher_dim_obs([self._pos_agent], [self._pos_goal])
 
-        # plt.imshow(obs, cmap='gray_r')
-        # plt.show()
+        plt.imshow(obs, cmap='gray_r')
+        plt.show()
         return [obs]
 
     def get_higher_dim_obs(self, indices_agent, indices_reward):
@@ -374,7 +374,7 @@ class MyEnv(Environment):
         obs = copy.deepcopy(self._map)
         obs = obs / 1.0
         obs = np.repeat(np.repeat(obs, 6, axis=0), 6, axis=1)
-        
+
         # agent repr
         agent_obs = np.zeros((6, 6))
         agent_obs[0, 2] = 0.7
@@ -415,7 +415,7 @@ class MyEnv(Environment):
 
 
 if __name__ == "__main__":
-    env = MyEnv(rng=None, higher_dim_obs=False, device='cuda')
+    env = MyEnv(rng=None, higher_dim_obs=False, device="cuda")
     env.act(2)
     env.act(2)
     env.act(2)

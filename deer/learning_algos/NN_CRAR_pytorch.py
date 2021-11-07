@@ -54,6 +54,7 @@ class NN:
             def __init__(self, internal_dim, input_dim):
                 super(Encoder, self).__init__()
                 self.num_channel, self.h, self.w = input_dim[0]
+
                 self.gate = nn.Tanh()
                 self.fc_low_dim = nn.Sequential(
                     nn.Linear(self.num_channel * self.h * self.w, 200), self.gate
@@ -100,6 +101,17 @@ class NN:
                 )
 
             def forward(self, x):
+                ### INJECT SOME INDUCTIVE BIASES ###
+                # hint = np.zeros((x.shape[0], 2, self.h, self.w))
+                # hint[:, 0, :, :] = np.tile(
+                #     np.arange(0, self.w) / self.w, (self.h, 1)
+                # ).T
+                # hint[:, 1, :, :] = np.tile(
+                #     np.arange(0, self.w) / self.w * 2.0 * np.pi, (self.h, 1)
+                # )
+                # hint = torch.tensor(hint, dtype=torch.float32).to("cuda")
+                # x = torch.concat([x, hint], dim=1)
+
                 if self.h <= 12 and self.w <= 12:
                     x = torch.flatten(x, start_dim=1)
                     x = self.fc_low_dim(x)
