@@ -23,7 +23,7 @@ def mean_squared_error_p_pytorch(y_pred):
 def exp_dec_error_pytorch(y_pred):
     return torch.mean(
         torch.exp(
-            -5.0 * torch.sqrt(torch.clamp(torch.sum(y_pred ** 2, dim=-1), 0.000001, 10))
+            -10.0 * torch.sqrt(torch.clamp(torch.sum(y_pred ** 2, dim=-1), 0.000001, 10))
         )
     )
 
