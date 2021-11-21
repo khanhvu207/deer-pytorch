@@ -6,6 +6,7 @@ from torch._C import device
 from ..base_classes import LearningAlgo
 from .NN_CRAR_pytorch import NN
 
+import math
 import copy
 import numpy as np
 
@@ -13,17 +14,18 @@ import torch
 import torch.optim as optim
 import torch.nn.functional as F
 
+# torch.autograd.set_detect_anomaly(True)
 
 def mean_squared_error_p_pytorch(y_pred):
     """Modified mean square error that clips"""
     return torch.sum(
-        torch.clamp((torch.max((y_pred) ** 2, dim=-1)[0] - 1), 0.0, 100.0)
+        torch.clamp((torch.max((y_pred) ** 2, dim=-1)[0] - 1.5), 0.0, 100.0) # Bounded in a ball of 2pi
     )  # = modified mse error L_inf
 
-def exp_dec_error_pytorch(y_pred):
+def exp_dec_error_pytorch(y_pred, C=10.0):
     return torch.mean(
         torch.exp(
-            -10.0 * torch.sqrt(torch.clamp(torch.sum(y_pred ** 2, dim=-1), 0.000001, 10))
+            -C * torch.sqrt(torch.clamp(torch.sum(y_pred ** 2, dim=-1), 0.000001, 10))
         )
     )
 
@@ -124,6 +126,13 @@ class CRAR(LearningAlgo):
         self.Q = self.learn_and_plan.Q_model().to(self.device)
         self.gamma = self.learn_and_plan.float_model().to(self.device)
         self.transition = self.learn_and_plan.transition_model().to(self.device)
+
+        # Watch models gradient
+        wandb_logger.watch(self.encoder, log="all")
+        wandb_logger.watch(self.R, log="all")
+        wandb_logger.watch(self.Q, log="all")
+        wandb_logger.watch(self.gamma, log="all")
+        wandb_logger.watch(self.transition, log="all")
 
         self.full_Q = self.learn_and_plan.full_Q_model
 
@@ -228,7 +237,7 @@ class CRAR(LearningAlgo):
         ETs = self.transition.predict(torch.cat((Es, onehot_actions), dim=-1)).detach()
         R = self.R.predict(torch.cat((Es, onehot_actions), -1)).detach()
 
-        if self.update_counter % 500 == 0:
+        if self.update_counter % 100 == 0:
             print("Printing a few elements useful for debugging:")
             print("actions_val[0], rewards_val[0], terminals_val[0]")
             print(actions_val[0], rewards_val[0], terminals_val[0])
@@ -247,7 +256,7 @@ class CRAR(LearningAlgo):
             self.transition,
         )
         loss = torch.nn.MSELoss()
-        loss_val = loss(out, torch.zeros_like(Es))
+        loss_val = loss(out, torch.zeros_like(out))
         self.loss_T += loss_val.data.detach().cpu().numpy()
         loss_val.backward()
         torch.nn.utils.clip_grad_norm_(self.transition.parameters(), max_norm=1.0)
@@ -333,7 +342,7 @@ class CRAR(LearningAlgo):
         torch.nn.utils.clip_grad_norm_(self.Q.parameters(), max_norm=1.0)
         self.optimizer_full_Q.step()
 
-        if self.update_counter % 500 == 0:
+        if self.update_counter % 100 == 0:
             print(
                 "self.loss_T/500., self.lossR/500., self.loss_gamma/500., self.loss_Q/500., self.loss_disentangle_t/500., self.loss_disambiguate1/500., self.loss_disambiguate2/500."
             )

@@ -33,6 +33,8 @@ class NN:
             self.n_channels_internal_dim = kwargs["internal_dim"]  # dim[-3]
         else:
             self.internal_dim = kwargs["internal_dim"]  # 2 for laby, 3 for catcher
+        
+        self.eps = 0.000001
 
     def encoder_model(self):
         """Instantiate a PyTorch model for the encoder of the CRAR learning algorithm.
@@ -154,6 +156,14 @@ class NN:
         enc_s1 = encoder_model(s1)
         enc_s2 = encoder_model(s2)
 
+        ### Calculate the distance in polar coordinate system
+        # eps = 1e-9
+        # x1, y1 = enc_s1[:, 0], enc_s1[:, 1]
+        # x2, y2 = enc_s2[:, 0], enc_s2[:, 1]
+        # r1, t1 = (x1 ** 2 + y1 ** 2).sqrt(), torch.atan2(y1, x1 + eps)
+        # r2, t2 = (x2 ** 2 + y2 ** 2).sqrt(), torch.atan2(y2, x2 + eps)
+        # polar_dist = (r1 ** 2 + r2 ** 2 - 2.0 * r1 * r2 * torch.cos(t1 - t2) + eps).sqrt() # Add a tiny epsilon for numerical stable
+        # return polar_dist
         return enc_s1 - enc_s2
 
     def transition_model(self):
@@ -246,7 +256,18 @@ class NN:
 
         Tx = transition_model(torch.cat((enc_s1, action), -1))
 
-        return (Tx - enc_s2) * (not_terminal)
+        ### Calculate the distance in polar coordinate system
+        x1, y1 = enc_s2[:, 0], enc_s2[:, 1]
+        x2, y2 = Tx[:, 0], Tx[:, 1]
+        r1, t1 = (x1 ** 2 + y1 ** 2).sqrt(), torch.atan2(y1, x1 + self.eps)
+        r2, t2 = (x2 ** 2 + y2 ** 2).sqrt(), torch.atan2(y2, x2 + self.eps)
+        polar_dist = (
+            (r1 ** 2 + r2 ** 2 - 2.0 * r1 * r2 * torch.cos(t1 - t2))
+            .clamp(self.eps, 100.0)
+            .sqrt()
+        )
+        return polar_dist
+        # return (Tx - enc_s2) * (not_terminal)
 
     def force_features(
         self, s1, s2, action, encoder_model, transition_model, plan_depth=0

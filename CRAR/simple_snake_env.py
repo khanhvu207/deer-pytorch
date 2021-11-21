@@ -365,8 +365,8 @@ class MyEnv(Environment):
             self._pos_agent
             obs = self.get_higher_dim_obs([self._pos_agent], [self._pos_goal])
 
-        plt.imshow(obs, cmap='gray_r')
-        plt.show()
+        # plt.imshow(obs, cmap='gray_r')
+        # plt.show()
         return [obs]
 
     def get_higher_dim_obs(self, indices_agent, indices_reward):
