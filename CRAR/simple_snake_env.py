@@ -1,5 +1,6 @@
 """ Simple maze environment
 """
+import math
 import numpy as np
 import pdb
 import torch
@@ -226,28 +227,50 @@ class MyEnv(Environment):
                 .cpu()
                 .numpy()
             )
+
+            def _polar2euclid(r, t):
+                return r * np.cos(t), r * np.sin(t)
+
             if self.intern_dim == 2:
+                r1, t1 = x[i : i + 1], y[i : i + 1] * math.pi
+                x1, y1 = _polar2euclid(r1, t1)
+                r2, t2 = predicted1[0, :1], predicted1[0, 1:2] * math.pi
+                x2, y2 = _polar2euclid(r2, t2)
                 ax.plot(
-                    np.concatenate([x[i : i + 1], predicted1[0, :1]]),
-                    np.concatenate([y[i : i + 1], predicted1[0, 1:2]]),
+                    np.concatenate([x1, x2]),
+                    np.concatenate([y1, y2]),
+                    # np.concatenate([x[i : i + 1], predicted1[0, :1]]),
+                    # np.concatenate([y[i : i + 1], predicted1[0, 1:2]]),
                     color="0.9",
                     alpha=0.75,
                 )
+                r2, t2 = predicted2[0, :1], predicted2[0, 1:2] * math.pi
+                x2, y2 = _polar2euclid(r2, t2)
                 ax.plot(
-                    np.concatenate([x[i : i + 1], predicted2[0, :1]]),
-                    np.concatenate([y[i : i + 1], predicted2[0, 1:2]]),
+                    np.concatenate([x1, x2]),
+                    np.concatenate([y1, y2]),
+                    # np.concatenate([x[i : i + 1], predicted2[0, :1]]),
+                    # np.concatenate([y[i : i + 1], predicted2[0, 1:2]]),
                     color="0.65",
                     alpha=0.75,
                 )
+                r2, t2 = predicted3[0, :1], predicted3[0, 1:2] * math.pi
+                x2, y2 = _polar2euclid(r2, t2)
                 ax.plot(
-                    np.concatenate([x[i : i + 1], predicted3[0, :1]]),
-                    np.concatenate([y[i : i + 1], predicted3[0, 1:2]]),
+                    np.concatenate([x1, x2]),
+                    np.concatenate([y1, y2]),
+                    # np.concatenate([x[i : i + 1], predicted3[0, :1]]),
+                    # np.concatenate([y[i : i + 1], predicted3[0, 1:2]]),
                     color="0.4",
                     alpha=0.75,
                 )
+                r2, t2 = predicted4[0, :1], predicted4[0, 1:2] * math.pi
+                x2, y2 = _polar2euclid(r2, t2)
                 ax.plot(
-                    np.concatenate([x[i : i + 1], predicted4[0, :1]]),
-                    np.concatenate([y[i : i + 1], predicted4[0, 1:2]]),
+                    np.concatenate([x1, x2]),
+                    np.concatenate([y1, y2]),
+                    # np.concatenate([x[i : i + 1], predicted4[0, :1]]),
+                    # np.concatenate([y[i : i + 1], predicted4[0, 1:2]]),
                     color="0.15",
                     alpha=0.75,
                 )
@@ -283,13 +306,19 @@ class MyEnv(Environment):
 
         # Plot the dots at each time step depending on the action taken
         length_block = [[0, 18], [18, 19], [19, 31]]
+        rs = all_possib_abs_states[:, 0]
+        ts = all_possib_abs_states[:, 1]
+        xs, ys = _polar2euclid(rs, ts * math.pi)
+
         for i in range(3):
             colors = ["blue", "orange", "green"]
             if self.intern_dim == 2:
                 line3 = ax.scatter(
-                    all_possib_abs_states[length_block[i][0] : length_block[i][1], 0],
-                    all_possib_abs_states[length_block[i][0] : length_block[i][1], 1],
-                    c=colors[i],
+                    xs[length_block[i][0] : length_block[i][1]],
+                    ys[length_block[i][0] : length_block[i][1]],
+                    # all_possib_abs_states[length_block[i][0] : length_block[i][1], 0],
+                    # all_possib_abs_states[length_block[i][0] : length_block[i][1], 1],
+                    c=colors[0],
                     marker="x",
                     edgecolors="k",
                     alpha=0.5,

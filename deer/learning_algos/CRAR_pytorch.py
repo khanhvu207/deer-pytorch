@@ -19,10 +19,10 @@ import torch.nn.functional as F
 def mean_squared_error_p_pytorch(y_pred):
     """Modified mean square error that clips"""
     return torch.sum(
-        torch.clamp((torch.max((y_pred) ** 2, dim=-1)[0] - 1.5), 0.0, 100.0) # Bounded in a ball of 2pi
+        torch.clamp((torch.max((y_pred) ** 2, dim=-1)[0] - 2), 0.0, 100.0) # Bounded in a ball of 2pi
     )  # = modified mse error L_inf
 
-def exp_dec_error_pytorch(y_pred, C=10.0):
+def exp_dec_error_pytorch(y_pred, C=10):
     return torch.mean(
         torch.exp(
             -C * torch.sqrt(torch.clamp(torch.sum(y_pred ** 2, dim=-1), 0.000001, 10))

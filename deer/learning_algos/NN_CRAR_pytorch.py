@@ -4,6 +4,7 @@ CRAR Neural network using PyTorch
 
 import numpy as np
 
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -257,15 +258,17 @@ class NN:
         Tx = transition_model(torch.cat((enc_s1, action), -1))
 
         ### Calculate the distance in polar coordinate system
-        x1, y1 = enc_s2[:, 0], enc_s2[:, 1]
-        x2, y2 = Tx[:, 0], Tx[:, 1]
-        r1, t1 = (x1 ** 2 + y1 ** 2).sqrt(), torch.atan2(y1, x1 + self.eps)
-        r2, t2 = (x2 ** 2 + y2 ** 2).sqrt(), torch.atan2(y2, x2 + self.eps)
+        r1, t1 = enc_s2[:, 0], enc_s2[:, 1]
+        r2, t2 = Tx[:, 0], Tx[:, 1]
+        t1 *= math.pi
+        t2 *= math.pi
+
         polar_dist = (
             (r1 ** 2 + r2 ** 2 - 2.0 * r1 * r2 * torch.cos(t1 - t2))
             .clamp(self.eps, 100.0)
             .sqrt()
         )
+
         return polar_dist
         # return (Tx - enc_s2) * (not_terminal)
 
