@@ -19,7 +19,7 @@ import torch.nn.functional as F
 def mean_squared_error_p_pytorch(y_pred):
     """Modified mean square error that clips"""
     return torch.sum(
-        torch.clamp((torch.max((y_pred) ** 2, dim=-1)[0] - 2), 0.0, 100.0) # Bounded in a ball of 2pi
+        torch.clamp((torch.max((y_pred) ** 2, dim=-1)[0] - 1), 0.0, 100.0) # Bounded in a ball of 2pi
     )  # = modified mse error L_inf
 
 def exp_dec_error_pytorch(y_pred, C=10):
@@ -101,6 +101,7 @@ class CRAR(LearningAlgo):
         self.update_counter = 0
         self._high_int_dim = kwargs.get("high_int_dim", False)
         self._internal_dim = kwargs.get("internal_dim", 2)
+        self._beta = 0.0
         self.wandb_logger = wandb_logger
         self.loss_interpret = 0
         self.loss_T = 0
@@ -288,7 +289,7 @@ class CRAR(LearningAlgo):
         self.optimizer_encoder.zero_grad()
         out = self.encoder(states_val)
         loss_val = mean_squared_error_p_pytorch(out)
-        self.loss_disambiguate1 += loss_val.data.detach().cpu().numpy()
+        self.loss_disambiguate1 += loss_val.item()
         loss_val.backward()
         torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
         self.optimizer_encoder.step()
@@ -302,7 +303,7 @@ class CRAR(LearningAlgo):
         self.optimizer_encoder_diff.zero_grad()
         out = self.encoder_diff(self.encoder, states_val, rolled)
         loss_val = exp_dec_error_pytorch(out)
-        self.loss_disambiguate2 += loss_val.data.detach().cpu().numpy()
+        self.loss_disambiguate2 += loss_val.item()
         loss_val.backward()
         torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
         self.optimizer_encoder_diff.step()
@@ -311,8 +312,8 @@ class CRAR(LearningAlgo):
         # Entropy maximization loss (through exponential) between two consecutive states
         self.optimizer_diff_s_s_.zero_grad()
         out = self.diff_s_s_(self.encoder, states_val, next_states_val)
-        loss_val = exp_dec_error_pytorch(out)
-        self.loss_disentangle_t += loss_val.data.detach().cpu().numpy()
+        loss_val = self._beta * exp_dec_error_pytorch(out)
+        self.loss_disentangle_t += loss_val.item()
         loss_val.backward()
         torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
         self.optimizer_diff_s_s_.step()
@@ -335,7 +336,7 @@ class CRAR(LearningAlgo):
         )
         loss = torch.nn.MSELoss()
         loss_val = loss(q_vals, target)
-        loss = loss_val.data.detach().cpu().numpy()
+        loss = loss_val.item()
         self.loss_Q += loss
         loss_val.backward()
         torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
