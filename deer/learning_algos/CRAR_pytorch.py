@@ -24,7 +24,7 @@ def mean_squared_error_p_pytorch(y_pred):
     )  # = modified mse error L_inf
 
 
-def exp_dec_error_pytorch(y_pred, C=100):
+def exp_dec_error_pytorch(y_pred, C=15):
     return torch.mean(
         torch.exp(
             -C * torch.sqrt(torch.clamp(torch.sum(y_pred ** 2, dim=-1), 0.000001, 10))
@@ -280,26 +280,26 @@ class CRAR(LearningAlgo):
 
         # Force feature loss
         # TODO: Force transition vector of action 0 to point toward the origin
-        action_type = 0
-        action_one_hot = torch.zeros((self._batch_size, 4))
-        action_one_hot[:, action_type] = 1
-        action_one_hot = action_one_hot.float().to(self.device)
-        cos_loss = torch.nn.CosineSimilarity()
-        self.optimizer_force_features.zero_grad()
-        vec1, vec2 = self.force_features(
-            states=states_val,
-            actions=action_one_hot,
-            encoder_model=self.encoder,
-            transition_model=self.transition,
-        )
-        cos_sim = cos_loss(vec1, vec2)
-        loss = torch.nn.MSELoss()
-        loss_val = self._beta2 * loss(cos_sim, torch.ones_like(cos_sim))
-        self.loss_force_feature += loss_val.item()
-        loss_val.backward()
-        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
-        torch.nn.utils.clip_grad_norm_(self.transition.parameters(), max_norm=1.0)
-        self.optimizer_force_features.step()
+        # action_type = 0
+        # action_one_hot = torch.zeros((self._batch_size, 4))
+        # action_one_hot[:, action_type] = 1
+        # action_one_hot = action_one_hot.float().to(self.device)
+        # cos_loss = torch.nn.CosineSimilarity()
+        # self.optimizer_force_features.zero_grad()
+        # vec1, vec2 = self.force_features(
+        #     states=states_val,
+        #     actions=action_one_hot,
+        #     encoder_model=self.encoder,
+        #     transition_model=self.transition,
+        # )
+        # cos_sim = cos_loss(vec1, vec2)
+        # loss = torch.nn.MSELoss()
+        # loss_val = self._beta2 * loss(cos_sim, torch.ones_like(cos_sim))
+        # self.loss_force_feature += loss_val.item()
+        # loss_val.backward()
+        # torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
+        # torch.nn.utils.clip_grad_norm_(self.transition.parameters(), max_norm=1.0)
+        # self.optimizer_force_features.step()
 
         # Calculate the loss for reward
         # self.optimizer_full_R.zero_grad()
@@ -326,7 +326,6 @@ class CRAR(LearningAlgo):
         # L_infinity ball of radius 1 loss
         self.optimizer_encoder.zero_grad()
         out = self.encoder(states_val)
-        # out = out[:, 0]  # Pick the radius only
         loss_val = mean_squared_error_p_pytorch(out)
         self.loss_disambiguate1 += loss_val.item()
         loss_val.backward()

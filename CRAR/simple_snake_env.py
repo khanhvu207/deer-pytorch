@@ -29,7 +29,7 @@ class MyEnv(Environment):
         self._size_maze = 8
         self._higher_dim_obs = kwargs["higher_dim_obs"]
         self.create_map()
-        self.intern_dim = 2
+        self.intern_dim = 3
 
     def create_map(self):
         self._map = np.zeros((self._size_maze, self._size_maze))
@@ -321,41 +321,27 @@ class MyEnv(Environment):
         #     s=100,
         # )
 
-        ax.scatter(
-            all_possib_abs_states[:, 0],
-            all_possib_abs_states[:, 1],
-            c="blue",
-            marker="x",
-            edgecolors="k",
-            alpha=0.5,
-            s=100,
-        )
-
-        # for i in range(3):
-        #     colors = ["blue", "orange", "green"]
-        #     if self.intern_dim == 2:
-        #         line3 = ax.scatter(
-        #             xs[length_block[i][0] : length_block[i][1]],
-        #             ys[length_block[i][0] : length_block[i][1]],
-        #             # all_possib_abs_states[length_block[i][0] : length_block[i][1], 0],
-        #             # all_possib_abs_states[length_block[i][0] : length_block[i][1], 1],
-        #             c=colors[0],
-        #             marker="x",
-        #             edgecolors="k",
-        #             alpha=0.5,
-        #             s=100,
-        #         )
-        #     else:
-        #         line3 = ax.scatter(
-        #             all_possib_abs_states[length_block[i][0] : length_block[i][1], 0],
-        #             all_possib_abs_states[length_block[i][0] : length_block[i][1], 1],
-        #             all_possib_abs_states[length_block[i][0] : length_block[i][1], 2],
-        #             marker="x",
-        #             depthshade=True,
-        #             edgecolors="k",
-        #             alpha=0.5,
-        #             s=50,
-        #         )
+        if self.intern_dim == 2:
+            ax.scatter(
+                all_possib_abs_states[:, 0],
+                all_possib_abs_states[:, 1],
+                marker="x",
+                depthshade=True,
+                edgecolors="k",
+                alpha=0.5,
+                s=50,
+            )    
+        else:
+            ax.scatter(
+                all_possib_abs_states[:, 0],
+                all_possib_abs_states[:, 1],
+                all_possib_abs_states[:, 2],
+                marker="x",
+                depthshade=True,
+                edgecolors="k",
+                alpha=0.5,
+                s=50,
+            )
 
         if self.intern_dim == 2:
             axes_lims = [ax.get_xlim(), ax.get_ylim()]

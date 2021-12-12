@@ -115,17 +115,6 @@ class NN:
                 )
 
             def forward(self, x):
-                ### INJECT SOME INDUCTIVE BIASES ###
-                # hint = np.zeros((x.shape[0], 2, self.h, self.w))
-                # hint[:, 0, :, :] = np.tile(
-                #     np.arange(0, self.w) / self.w, (self.h, 1)
-                # ).T
-                # hint[:, 1, :, :] = np.tile(
-                #     np.arange(0, self.w) / self.w * 2.0 * np.pi, (self.h, 1)
-                # )
-                # hint = torch.tensor(hint, dtype=torch.float32).to("cuda")
-                # x = torch.concat([x, hint], dim=1)
-
                 if self.h <= 12 and self.w <= 12:
                     x = torch.flatten(x, start_dim=1)
                     x = self.fc_low_dim(x)
@@ -136,7 +125,6 @@ class NN:
                     x = self.fc_after_conv(x)
                     x = self.deep_fc_encoder(x)
 
-                # x[:, 1] = torch.tanh(x[:, 1]) * math.pi
                 return x
 
             def predict(self, s):
@@ -170,14 +158,6 @@ class NN:
         enc_s1 = encoder_model(s1)
         enc_s2 = encoder_model(s2)
 
-        ### Calculate the distance in polar coordinate system
-        # eps = 1e-9
-        # x1, y1 = enc_s1[:, 0], enc_s1[:, 1]
-        # x2, y2 = enc_s2[:, 0], enc_s2[:, 1]
-        # r1, t1 = (x1 ** 2 + y1 ** 2).sqrt(), torch.atan2(y1, x1 + eps)
-        # r2, t2 = (x2 ** 2 + y2 ** 2).sqrt(), torch.atan2(y2, x2 + eps)
-        # polar_dist = (r1 ** 2 + r2 ** 2 - 2.0 * r1 * r2 * torch.cos(t1 - t2) + eps).sqrt() # Add a tiny epsilon for numerical stable
-        # return polar_dist
         return enc_s1 - enc_s2
 
     def transition_model(self):
@@ -232,7 +212,6 @@ class NN:
                 init_state = x[:, : self.internal_dim]
                 x = self.deep_fc_encoder(x)
                 x = x + init_state
-                # x[:, 1] = torch.tanh(x[:, 1]) * math.pi
                 return x
 
             def predict(self, x):
@@ -279,45 +258,14 @@ class NN:
         model with output Tx (= model estimate of x')
 
         """
-
         enc_s1 = encoder_model(s1)
         enc_s2 = encoder_model(s2)
-
         Tx = transition_model(torch.cat((enc_s1, action), -1))
-
-        ### Calculate the distance in polar coordinate system
-        # x1, y1 = enc_s2[:, 0], enc_s2[:, 1]
-        # x2, y2 = Tx[:, 0], Tx[:, 1]
-        # r1, t1 = (x1 ** 2 + y1 ** 2).sqrt(), torch.atan2(y1, x1 + self.eps)
-        # r2, t2 = (x2 ** 2 + y2 ** 2).sqrt(), torch.atan2(y2, x2 + self.eps)
-        # polar_dist = (
-        #     (r1 ** 2 + r2 ** 2 - 2.0 * r1 * r2 * torch.cos(t1 - t2))
-        #     .clamp(self.eps, 100.0)
-        #     .sqrt()
-        # )
-
-        # angular_dist = torch.min(2 * math.pi - torch.abs(t1 - t2), torch.abs(t1 - t2))
-        # return angular_dist * not_terminal
-        # return polar_dist * not_terminal
+        
         return (Tx - enc_s2) * (not_terminal)
 
     def force_features(self, states, actions, encoder_model, transition_model):
-        enc_s = encoder_model(states)
-        Tx = transition_model(torch.cat((enc_s, actions), dim=-1))
-
-        origin = torch.zeros_like(enc_s).to(device="cuda")
-        origin_vector = origin - enc_s
-        transition_vector = Tx - enc_s
-
-        return origin_vector, transition_vector
-
-    # def force_features(self, states, next_states, encoder_model):
-    #     enc_s1 = encoder_model(states)
-    #     enc_s2 = encoder_model(next_states)
-    #     r1, t1 = enc_s1[:, 0], enc_s1[:, 1]
-    #     r2, t2 = enc_s2[:, 0], enc_s2[:, 1]
-    #     angular_dist = torch.min(2 * math.pi - torch.abs(t1 - t2), torch.abs(t1 - t2))
-    #     return angular_dist
+        raise NotImplementedError
 
     def float_model(self):
         """Instantiate a Keras model for fitting a float from x.
