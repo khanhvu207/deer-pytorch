@@ -33,12 +33,10 @@ class MyEnv(Environment):
 
     def create_map(self):
         self._map = np.zeros((self._size_maze, self._size_maze))
-        self._map[-1, :] = 1
-        self._map[0, :] = 1
+        # self._map[-1, :] = 1
+        # self._map[0, :] = 1
         # self._map[:, 0] = 1
         # self._map[:, -1] = 1
-        # self._map[:, self._size_maze // 2] = 1
-        # self._map[self._size_maze // 2, self._size_maze // 2] = 0
         self._pos_agent = [3, 1]
         self._pos_goal = [self._size_maze - 2, self._size_maze - 2]
 
@@ -79,17 +77,17 @@ class MyEnv(Environment):
 
         # NOTE: x is vertical axis
         if action == 0:
-            new_x = new_x - 1
-            # new_x = _modulo(new_x - 1, self._size_maze)
+            # new_x = new_x - 1
+            new_x = _modulo(new_x - 1, self._size_maze)
         elif action == 1:
-            # new_x = _modulo(new_x + 1, self._size_maze) 
-            new_x = new_x + 1
+            new_x = _modulo(new_x + 1, self._size_maze) 
+            # new_x = new_x + 1
         elif action == 2:
-            new_y = _modulo(new_y - 1, self._size_maze)  # Wrap around!
+            new_y = _modulo(new_y - 1, self._size_maze)
             # new_y -= 1
         elif action == 3:
             # new_y += 1
-            new_y = _modulo(new_y + 1, self._size_maze)  # Wrap around!
+            new_y = _modulo(new_y + 1, self._size_maze)
 
         if self._map[new_x, new_y] == 0:
             self._pos_agent[0] = new_x
@@ -306,20 +304,6 @@ class MyEnv(Environment):
                 )
 
         # Plot the dots at each time step depending on the action taken
-        # length_block = [[0, 48]]
-        # rs = all_possib_abs_states[:, 0]
-        # ts = all_possib_abs_states[:, 1]
-        # xs, ys = _polar2euclid(rs, ts)
-
-        # ax.scatter(
-        #     xs,
-        #     ys,
-        #     c="blue",
-        #     marker="x",
-        #     edgecolors="k",
-        #     alpha=0.5,
-        #     s=100,
-        # )
 
         if self.intern_dim == 2:
             ax.scatter(
@@ -400,7 +384,8 @@ class MyEnv(Environment):
             "self._pos_agent"
             self._pos_agent
             obs = self.get_higher_dim_obs([self._pos_agent], [self._pos_goal])
-
+        # plt.imshow(obs, cmap='gray_r')
+        # plt.show()
         return [obs]
 
     def get_higher_dim_obs(self, indices_agent, indices_reward):
