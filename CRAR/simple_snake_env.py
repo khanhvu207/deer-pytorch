@@ -29,7 +29,7 @@ class MyEnv(Environment):
         self._size_maze = 8
         self._higher_dim_obs = kwargs["higher_dim_obs"]
         self.create_map()
-        self.intern_dim = 3
+        self.intern_dim = 2
 
     def create_map(self):
         self._map = np.zeros((self._size_maze, self._size_maze))
@@ -161,6 +161,7 @@ class MyEnv(Environment):
             ax = fig.add_subplot(111)
             ax.set_xlabel(r"$X_1$")
             ax.set_ylabel(r"$X_2$")
+
         else:
             ax = fig.add_subplot(111, projection="3d")
             ax.set_xlabel(r"$X_1$")
@@ -303,18 +304,17 @@ class MyEnv(Environment):
                     alpha=0.75,
                 )
 
-        # Plot the dots at each time step depending on the action taken
+        # Plot the dots at each time step depending on the action taken 
 
         if self.intern_dim == 2:
             ax.scatter(
                 all_possib_abs_states[:, 0],
                 all_possib_abs_states[:, 1],
                 marker="x",
-                depthshade=True,
                 edgecolors="k",
                 alpha=0.5,
                 s=50,
-            )    
+            )
         else:
             ax.scatter(
                 all_possib_abs_states[:, 0],
