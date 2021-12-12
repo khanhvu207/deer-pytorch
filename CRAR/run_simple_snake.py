@@ -54,8 +54,13 @@ class Defaults:
     FREEZE_INTERVAL = 1000
     DETERMINISTIC = False
 
+    # -----------------------
+    # Online logger
+    # -----------------------
+    WANDB_ONLINE_MODE = 0
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 HIGHER_DIM_OBS = False
 
 if __name__ == "__main__":
@@ -70,7 +75,10 @@ if __name__ == "__main__":
 
     # --- Instantiate logger ---
     logger = wandb.init(
-        mode="offline", project="deer", entity="kvu207", config=json.loads(jsons.dumps(Defaults))
+        mode="online" if parameters.online_logger else "offline",
+        project="deer",
+        entity="kvu207",
+        config=json.loads(jsons.dumps(Defaults)),
     )
 
     # --- Instantiate environment ---
@@ -90,7 +98,7 @@ if __name__ == "__main__":
         high_int_dim=False,
         internal_dim=2,
         wandb_logger=logger,
-        device=device
+        device=device,
     )
 
     # --- Instantiate agent ---

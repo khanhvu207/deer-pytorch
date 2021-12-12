@@ -8,9 +8,6 @@ import torch
 from deer.base_classes import Environment
 
 import matplotlib
-
-# matplotlib.use("agg")
-# matplotlib.use('qt5agg')
 from mpl_toolkits.axes_grid1 import host_subplot
 import mpl_toolkits.axisartist as AA
 import matplotlib.pyplot as plt
@@ -36,8 +33,8 @@ class MyEnv(Environment):
 
     def create_map(self):
         self._map = np.zeros((self._size_maze, self._size_maze))
-        self._map[5:, :] = 1
-        self._map[0:3, :] = 1
+        self._map[-1, :] = 1
+        self._map[0, :] = 1
         # self._map[:, 0] = 1
         # self._map[:, -1] = 1
         # self._map[:, self._size_maze // 2] = 1
@@ -47,8 +44,6 @@ class MyEnv(Environment):
 
     def reset(self, mode):
         self.create_map()
-
-        self._map[self._size_maze // 2, self._size_maze // 2] = 0
 
         if mode == MyEnv.VALIDATION_MODE:
             if self._mode != MyEnv.VALIDATION_MODE:
@@ -62,7 +57,8 @@ class MyEnv(Environment):
             self._mode = -1
 
         # Setting the starting position of the agent
-        self._pos_agent = [self._size_maze // 2, self._size_maze // 2]
+        # self._pos_agent = [self._size_maze // 2, self._size_maze // 2]
+        self._pos_agent = [3, 1]
 
         return [1 * [self._size_maze * [self._size_maze * [0]]]]
 
@@ -84,11 +80,15 @@ class MyEnv(Environment):
         # NOTE: x is vertical axis
         if action == 0:
             new_x = new_x - 1
+            # new_x = _modulo(new_x - 1, self._size_maze)
         elif action == 1:
+            # new_x = _modulo(new_x + 1, self._size_maze) 
             new_x = new_x + 1
         elif action == 2:
             new_y = _modulo(new_y - 1, self._size_maze)  # Wrap around!
+            # new_y -= 1
         elif action == 3:
+            # new_y += 1
             new_y = _modulo(new_y + 1, self._size_maze)  # Wrap around!
 
         if self._map[new_x, new_y] == 0:
@@ -112,7 +112,8 @@ class MyEnv(Environment):
         for y_a in range(self._size_maze):
             for x_a in range(self._size_maze):
                 state = copy.deepcopy(self._map)
-                state[self._size_maze // 2, self._size_maze // 2] = 0
+                # state[self._size_maze // 2, self._size_maze // 2] = 0
+
                 if state[x_a, y_a] == 0:
                     if self._higher_dim_obs == True:
                         all_possib_inp.append(
@@ -232,45 +233,45 @@ class MyEnv(Environment):
                 return r * np.cos(t), r * np.sin(t)
 
             if self.intern_dim == 2:
-                r1, t1 = x[i : i + 1], y[i : i + 1] * math.pi
-                x1, y1 = _polar2euclid(r1, t1)
-                r2, t2 = predicted1[0, :1], predicted1[0, 1:2] * math.pi
-                x2, y2 = _polar2euclid(r2, t2)
+                # r1, t1 = x[i : i + 1], y[i : i + 1]
+                # x1, y1 = _polar2euclid(r1, t1)
+                # r2, t2 = predicted1[0, :1], predicted1[0, 1:2]
+                # x2, y2 = _polar2euclid(r2, t2)
                 ax.plot(
-                    np.concatenate([x1, x2]),
-                    np.concatenate([y1, y2]),
-                    # np.concatenate([x[i : i + 1], predicted1[0, :1]]),
-                    # np.concatenate([y[i : i + 1], predicted1[0, 1:2]]),
+                    # np.concatenate([x1, x2]),
+                    # np.concatenate([y1, y2]),
+                    np.concatenate([x[i : i + 1], predicted1[0, :1]]),
+                    np.concatenate([y[i : i + 1], predicted1[0, 1:2]]),
                     color="0.9",
                     alpha=0.75,
                 )
-                r2, t2 = predicted2[0, :1], predicted2[0, 1:2] * math.pi
-                x2, y2 = _polar2euclid(r2, t2)
+                # r2, t2 = predicted2[0, :1], predicted2[0, 1:2]
+                # x2, y2 = _polar2euclid(r2, t2)
                 ax.plot(
-                    np.concatenate([x1, x2]),
-                    np.concatenate([y1, y2]),
-                    # np.concatenate([x[i : i + 1], predicted2[0, :1]]),
-                    # np.concatenate([y[i : i + 1], predicted2[0, 1:2]]),
+                    # np.concatenate([x1, x2]),
+                    # np.concatenate([y1, y2]),
+                    np.concatenate([x[i : i + 1], predicted2[0, :1]]),
+                    np.concatenate([y[i : i + 1], predicted2[0, 1:2]]),
                     color="0.65",
                     alpha=0.75,
                 )
-                r2, t2 = predicted3[0, :1], predicted3[0, 1:2] * math.pi
-                x2, y2 = _polar2euclid(r2, t2)
+                # r2, t2 = predicted3[0, :1], predicted3[0, 1:2]
+                # x2, y2 = _polar2euclid(r2, t2)
                 ax.plot(
-                    np.concatenate([x1, x2]),
-                    np.concatenate([y1, y2]),
-                    # np.concatenate([x[i : i + 1], predicted3[0, :1]]),
-                    # np.concatenate([y[i : i + 1], predicted3[0, 1:2]]),
+                    # np.concatenate([x1, x2]),
+                    # np.concatenate([y1, y2]),
+                    np.concatenate([x[i : i + 1], predicted3[0, :1]]),
+                    np.concatenate([y[i : i + 1], predicted3[0, 1:2]]),
                     color="0.4",
                     alpha=0.75,
                 )
-                r2, t2 = predicted4[0, :1], predicted4[0, 1:2] * math.pi
-                x2, y2 = _polar2euclid(r2, t2)
+                # r2, t2 = predicted4[0, :1], predicted4[0, 1:2]
+                # x2, y2 = _polar2euclid(r2, t2)
                 ax.plot(
-                    np.concatenate([x1, x2]),
-                    np.concatenate([y1, y2]),
-                    # np.concatenate([x[i : i + 1], predicted4[0, :1]]),
-                    # np.concatenate([y[i : i + 1], predicted4[0, 1:2]]),
+                    # np.concatenate([x1, x2]),
+                    # np.concatenate([y1, y2]),
+                    np.concatenate([x[i : i + 1], predicted4[0, :1]]),
+                    np.concatenate([y[i : i + 1], predicted4[0, 1:2]]),
                     color="0.15",
                     alpha=0.75,
                 )
@@ -305,36 +306,56 @@ class MyEnv(Environment):
                 )
 
         # Plot the dots at each time step depending on the action taken
-        length_block = [[0, 18], [18, 19], [19, 31]]
-        rs = all_possib_abs_states[:, 0]
-        ts = all_possib_abs_states[:, 1]
-        xs, ys = _polar2euclid(rs, ts * math.pi)
+        # length_block = [[0, 48]]
+        # rs = all_possib_abs_states[:, 0]
+        # ts = all_possib_abs_states[:, 1]
+        # xs, ys = _polar2euclid(rs, ts)
 
-        for i in range(3):
-            colors = ["blue", "orange", "green"]
-            if self.intern_dim == 2:
-                line3 = ax.scatter(
-                    xs[length_block[i][0] : length_block[i][1]],
-                    ys[length_block[i][0] : length_block[i][1]],
-                    # all_possib_abs_states[length_block[i][0] : length_block[i][1], 0],
-                    # all_possib_abs_states[length_block[i][0] : length_block[i][1], 1],
-                    c=colors[0],
-                    marker="x",
-                    edgecolors="k",
-                    alpha=0.5,
-                    s=100,
-                )
-            else:
-                line3 = ax.scatter(
-                    all_possib_abs_states[length_block[i][0] : length_block[i][1], 0],
-                    all_possib_abs_states[length_block[i][0] : length_block[i][1], 1],
-                    all_possib_abs_states[length_block[i][0] : length_block[i][1], 2],
-                    marker="x",
-                    depthshade=True,
-                    edgecolors="k",
-                    alpha=0.5,
-                    s=50,
-                )
+        # ax.scatter(
+        #     xs,
+        #     ys,
+        #     c="blue",
+        #     marker="x",
+        #     edgecolors="k",
+        #     alpha=0.5,
+        #     s=100,
+        # )
+
+        ax.scatter(
+            all_possib_abs_states[:, 0],
+            all_possib_abs_states[:, 1],
+            c="blue",
+            marker="x",
+            edgecolors="k",
+            alpha=0.5,
+            s=100,
+        )
+
+        # for i in range(3):
+        #     colors = ["blue", "orange", "green"]
+        #     if self.intern_dim == 2:
+        #         line3 = ax.scatter(
+        #             xs[length_block[i][0] : length_block[i][1]],
+        #             ys[length_block[i][0] : length_block[i][1]],
+        #             # all_possib_abs_states[length_block[i][0] : length_block[i][1], 0],
+        #             # all_possib_abs_states[length_block[i][0] : length_block[i][1], 1],
+        #             c=colors[0],
+        #             marker="x",
+        #             edgecolors="k",
+        #             alpha=0.5,
+        #             s=100,
+        #         )
+        #     else:
+        #         line3 = ax.scatter(
+        #             all_possib_abs_states[length_block[i][0] : length_block[i][1], 0],
+        #             all_possib_abs_states[length_block[i][0] : length_block[i][1], 1],
+        #             all_possib_abs_states[length_block[i][0] : length_block[i][1], 2],
+        #             marker="x",
+        #             depthshade=True,
+        #             edgecolors="k",
+        #             alpha=0.5,
+        #             s=50,
+        #         )
 
         if self.intern_dim == 2:
             axes_lims = [ax.get_xlim(), ax.get_ylim()]
@@ -394,8 +415,6 @@ class MyEnv(Environment):
             self._pos_agent
             obs = self.get_higher_dim_obs([self._pos_agent], [self._pos_goal])
 
-        # plt.imshow(obs, cmap='gray_r')
-        # plt.show()
         return [obs]
 
     def get_higher_dim_obs(self, indices_agent, indices_reward):
@@ -445,8 +464,4 @@ class MyEnv(Environment):
 
 if __name__ == "__main__":
     env = MyEnv(rng=None, higher_dim_obs=False, device="cuda")
-    env.act(2)
-    env.act(2)
-    env.act(2)
-    env.act(3)
     print(env.observe())

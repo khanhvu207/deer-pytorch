@@ -34,7 +34,7 @@ class NN:
             self.n_channels_internal_dim = kwargs["internal_dim"]  # dim[-3]
         else:
             self.internal_dim = kwargs["internal_dim"]  # 2 for laby, 3 for catcher
-        
+
         self.eps = 0.000001
 
     def encoder_model(self):
@@ -59,18 +59,29 @@ class NN:
                 self.num_channel, self.h, self.w = input_dim[0]
 
                 self.gate = nn.Tanh()
+                self.hidden = 256
                 self.fc_low_dim = nn.Sequential(
-                    nn.Linear(self.num_channel * self.h * self.w, 200), self.gate
+                    nn.Linear(self.num_channel * self.h * self.w, self.hidden),
+                    self.gate,
                 )
                 self.deep_fc_encoder = nn.Sequential(
-                    nn.Linear(200, 100),
+                    nn.Linear(self.hidden, 128),
                     self.gate,
-                    nn.Linear(100, 50),
+                    nn.Linear(128, 64),
                     self.gate,
-                    nn.Linear(50, 10),
+                    nn.Linear(64, 16),
                     self.gate,
-                    nn.Linear(10, internal_dim),
+                    nn.Linear(16, internal_dim),
                 )
+                # self.deep_fc_encoder = nn.Sequential(
+                #     nn.Linear(200, 100),
+                #     self.gate,
+                #     nn.Linear(100, 50),
+                #     self.gate,
+                #     nn.Linear(50, 10),
+                #     self.gate,
+                #     nn.Linear(10, internal_dim),
+                # )
                 self.conv_encoder = nn.Sequential(
                     nn.Conv2d(
                         in_channels=self.num_channel,
@@ -124,6 +135,8 @@ class NN:
                     x = torch.flatten(x, start_dim=1)
                     x = self.fc_after_conv(x)
                     x = self.deep_fc_encoder(x)
+
+                # x[:, 1] = torch.tanh(x[:, 1]) * math.pi
                 return x
 
             def predict(self, s):
@@ -190,22 +203,37 @@ class NN:
                 super(Transition, self).__init__()
                 self.gate = nn.Tanh()
                 self.deep_fc_encoder = nn.Sequential(
-                    nn.Linear(internal_dim + n_actions, 10),
+                    nn.Linear(internal_dim + n_actions, 32),
                     self.gate,
-                    nn.Linear(10, 30),
+                    nn.Linear(32, 128),
                     self.gate,
-                    nn.Linear(30, 30),
+                    nn.Linear(128, 128),
                     self.gate,
-                    nn.Linear(30, 10),
+                    nn.Linear(128, 32),
                     self.gate,
-                    nn.Linear(10, internal_dim),
+                    nn.Linear(32, internal_dim),
                 )
+
+                # self.deep_fc_encoder = nn.Sequential(
+                #     nn.Linear(internal_dim + n_actions, 10),
+                #     self.gate,
+                #     nn.Linear(10, 30),
+                #     self.gate,
+                #     nn.Linear(30, 30),
+                #     self.gate,
+                #     nn.Linear(30, 10),
+                #     self.gate,
+                #     nn.Linear(10, internal_dim),
+                # )
+
                 self.internal_dim = internal_dim
 
             def forward(self, x):
                 init_state = x[:, : self.internal_dim]
                 x = self.deep_fc_encoder(x)
-                return x + init_state
+                x = x + init_state
+                # x[:, 1] = torch.tanh(x[:, 1]) * math.pi
+                return x
 
             def predict(self, x):
                 return self.forward(x)
@@ -258,52 +286,38 @@ class NN:
         Tx = transition_model(torch.cat((enc_s1, action), -1))
 
         ### Calculate the distance in polar coordinate system
-        r1, t1 = enc_s2[:, 0], enc_s2[:, 1]
-        r2, t2 = Tx[:, 0], Tx[:, 1]
-        t1 *= math.pi
-        t2 *= math.pi
+        # x1, y1 = enc_s2[:, 0], enc_s2[:, 1]
+        # x2, y2 = Tx[:, 0], Tx[:, 1]
+        # r1, t1 = (x1 ** 2 + y1 ** 2).sqrt(), torch.atan2(y1, x1 + self.eps)
+        # r2, t2 = (x2 ** 2 + y2 ** 2).sqrt(), torch.atan2(y2, x2 + self.eps)
+        # polar_dist = (
+        #     (r1 ** 2 + r2 ** 2 - 2.0 * r1 * r2 * torch.cos(t1 - t2))
+        #     .clamp(self.eps, 100.0)
+        #     .sqrt()
+        # )
 
-        polar_dist = (
-            (r1 ** 2 + r2 ** 2 - 2.0 * r1 * r2 * torch.cos(t1 - t2))
-            .clamp(self.eps, 100.0)
-            .sqrt()
-        )
+        # angular_dist = torch.min(2 * math.pi - torch.abs(t1 - t2), torch.abs(t1 - t2))
+        # return angular_dist * not_terminal
+        # return polar_dist * not_terminal
+        return (Tx - enc_s2) * (not_terminal)
 
-        return polar_dist
-        # return (Tx - enc_s2) * (not_terminal)
+    def force_features(self, states, actions, encoder_model, transition_model):
+        enc_s = encoder_model(states)
+        Tx = transition_model(torch.cat((enc_s, actions), dim=-1))
 
-    def force_features(
-        self, s1, s2, action, encoder_model, transition_model, plan_depth=0
-    ):
-        """Instantiate a Keras model that provides the vector of the transition at E(s1). It is calculated as the different between E(s1) and E(T(s1)).
-        Used to force the directions of the transitions.
+        origin = torch.zeros_like(enc_s).to(device="cuda")
+        origin_vector = origin - enc_s
+        transition_vector = Tx - enc_s
 
-        The model takes the four following inputs:
-        s1 : list of objects
-            Each object is a numpy array that relates to one of the observations
-            with size [batch_size * history size * size of punctual observation (which is 2D,1D or scalar)]).
-        a : list of ints with length (plan_depth+1)
-            the action(s) considered at s1
+        return origin_vector, transition_vector
 
-        Parameters
-        -----------
-        encoder_model: instantiation of a Keras model for the encoder (E)
-        transition_model: instantiation of a Keras model for the transition (T)
-        plan_depth: if>1, it provides the possibility to consider a sequence of transitions between s1 and s2
-        (input a is then a list of actions)
-
-        Returns
-        -------
-        model with output E(s1)-T(E(s1))
-
-        """
-
-        enc_s1 = encoder_model(s1)
-        enc_s2 = encoder_model(s2)
-
-        Tx = transition_model(torch.cat((enc_s1, action), -1))
-
-        return Tx - enc_s2
+    # def force_features(self, states, next_states, encoder_model):
+    #     enc_s1 = encoder_model(states)
+    #     enc_s2 = encoder_model(next_states)
+    #     r1, t1 = enc_s1[:, 0], enc_s1[:, 1]
+    #     r2, t2 = enc_s2[:, 0], enc_s2[:, 1]
+    #     angular_dist = torch.min(2 * math.pi - torch.abs(t1 - t2), torch.abs(t1 - t2))
+    #     return angular_dist
 
     def float_model(self):
         """Instantiate a Keras model for fitting a float from x.

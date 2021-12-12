@@ -16,18 +16,21 @@ import torch.nn.functional as F
 
 # torch.autograd.set_detect_anomaly(True)
 
+
 def mean_squared_error_p_pytorch(y_pred):
     """Modified mean square error that clips"""
     return torch.sum(
-        torch.clamp((torch.max((y_pred) ** 2, dim=-1)[0] - 1), 0.0, 100.0) # Bounded in a ball of 2pi
+        torch.clamp((torch.max((y_pred) ** 2, dim=-1)[0] - 1), 0.0, 100.0)
     )  # = modified mse error L_inf
 
-def exp_dec_error_pytorch(y_pred, C=10):
+
+def exp_dec_error_pytorch(y_pred, C=100):
     return torch.mean(
         torch.exp(
             -C * torch.sqrt(torch.clamp(torch.sum(y_pred ** 2, dim=-1), 0.000001, 10))
         )
     )
+
 
 def cosine_proximity2_pytorch(y_true, y_pred):
     """This loss is similar to the native cosine_proximity loss from Keras
@@ -37,6 +40,7 @@ def cosine_proximity2_pytorch(y_true, y_pred):
     y_true = F.normalize(y_true[:, 0:2], p=2, dim=-1)
     y_pred = F.normalize(y_pred[:, 0:2], p=2, dim=-1)
     return -torch.sum(y_true * y_pred, dim=-1)
+
 
 class CRAR(LearningAlgo):
     """
@@ -101,7 +105,8 @@ class CRAR(LearningAlgo):
         self.update_counter = 0
         self._high_int_dim = kwargs.get("high_int_dim", False)
         self._internal_dim = kwargs.get("internal_dim", 2)
-        self._beta = 0.0
+        self._beta1 = 1.0
+        self._beta2 = 0.0001
         self.wandb_logger = wandb_logger
         self.loss_interpret = 0
         self.loss_T = 0
@@ -110,6 +115,7 @@ class CRAR(LearningAlgo):
         self.loss_disentangle_t = 0
         self.loss_disambiguate1 = 0
         self.loss_disambiguate2 = 0
+        self.loss_force_feature = 0
         self.loss_gamma = 0
 
         self.learn_and_plan = neural_network(
@@ -171,7 +177,9 @@ class CRAR(LearningAlgo):
         self.Q_target = self.learn_and_plan_target.Q_model().to(self.device)
         self.R_target = self.learn_and_plan_target.float_model().to(self.device)
         self.gamma_target = self.learn_and_plan_target.float_model().to(self.device)
-        self.transition_target = self.learn_and_plan_target.transition_model().to(self.device)
+        self.transition_target = self.learn_and_plan_target.transition_model().to(
+            self.device
+        )
 
         self.full_Q_target = self.learn_and_plan_target.full_Q_model
 
@@ -198,17 +206,17 @@ class CRAR(LearningAlgo):
 
         actions_val : numpy array of integers with size [self._batch_size]
             actions[i] is the action taken after having observed states[:][i].
-        
+
         rewards_val : numpy array of floats with size [self._batch_size]
             rewards[i] is the reward obtained for taking actions[i-1].
-        
+
         next_states_val : numpy array of objects
             Each object is a numpy array that relates to one of the observations
             with size [batch_size * history size * size of punctual observation (which is 2D,1D or scalar)]).
-        
+
         terminals_val : numpy array of booleans with size [self._batch_size]
             terminals[i] is True if the transition leads to a terminal state and False otherwise
-        
+
         Returns
         -------
         Average loss of the batch training for the Q-values (RMSE)
@@ -228,10 +236,16 @@ class CRAR(LearningAlgo):
         states_val = torch.from_numpy(states_val[0]).float().to(self.device)
         next_states_val = torch.from_numpy(next_states_val[0]).float().to(self.device)
         onehot_actions = torch.from_numpy(onehot_actions).float().to(self.device)
-        terminals_val = torch.from_numpy(
-            terminals_val[:, None].astype(np.int32)
-        ).float().to(self.device)
-        rewards_val = torch.from_numpy(rewards_val[:, None].astype(np.int32)).float().to(self.device)
+        terminals_val = (
+            torch.from_numpy(terminals_val[:, None].astype(np.int32))
+            .float()
+            .to(self.device)
+        )
+        rewards_val = (
+            torch.from_numpy(rewards_val[:, None].astype(np.int32))
+            .float()
+            .to(self.device)
+        )
 
         Es_ = self.encoder.predict(next_states_val).detach()
         Es = self.encoder.predict(states_val).detach()
@@ -258,11 +272,35 @@ class CRAR(LearningAlgo):
         )
         loss = torch.nn.MSELoss()
         loss_val = loss(out, torch.zeros_like(out))
-        self.loss_T += loss_val.data.detach().cpu().numpy()
+        self.loss_T += loss_val.item()
         loss_val.backward()
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
         torch.nn.utils.clip_grad_norm_(self.transition.parameters(), max_norm=1.0)
         self.optimizer_diff_Tx_x_.step()
-        
+
+        # Force feature loss
+        # TODO: Force transition vector of action 0 to point toward the origin
+        action_type = 0
+        action_one_hot = torch.zeros((self._batch_size, 4))
+        action_one_hot[:, action_type] = 1
+        action_one_hot = action_one_hot.float().to(self.device)
+        cos_loss = torch.nn.CosineSimilarity()
+        self.optimizer_force_features.zero_grad()
+        vec1, vec2 = self.force_features(
+            states=states_val,
+            actions=action_one_hot,
+            encoder_model=self.encoder,
+            transition_model=self.transition,
+        )
+        cos_sim = cos_loss(vec1, vec2)
+        loss = torch.nn.MSELoss()
+        loss_val = self._beta2 * loss(cos_sim, torch.ones_like(cos_sim))
+        self.loss_force_feature += loss_val.item()
+        loss_val.backward()
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.transition.parameters(), max_norm=1.0)
+        self.optimizer_force_features.step()
+
         # Calculate the loss for reward
         # self.optimizer_full_R.zero_grad()
         # out = self.full_R(states_val, onehot_actions, self.encoder, self.R)
@@ -271,7 +309,7 @@ class CRAR(LearningAlgo):
         # self.lossR += loss_val.data.numpy()
         # loss_val.backward()
         # for param in list(self.encoder.parameters()) + list(self.R.parameters()):
-            # param.grad.data.clamp_(-1, 1)
+        # param.grad.data.clamp_(-1, 1)
         # self.optimizer_full_R.step()
 
         # Calculate loss for gamma
@@ -282,12 +320,13 @@ class CRAR(LearningAlgo):
         # self.loss_gamma += loss_val.data.numpy()
         # loss_val.backward()
         # for param in list(self.encoder.parameters()) + list(self.gamma.parameters()):
-            # param.grad.data.clamp_(-1, 1)
+        # param.grad.data.clamp_(-1, 1)
         # self.optimizer_full_gamma.step()
 
         # L_infinity ball of radius 1 loss
         self.optimizer_encoder.zero_grad()
         out = self.encoder(states_val)
+        # out = out[:, 0]  # Pick the radius only
         loss_val = mean_squared_error_p_pytorch(out)
         self.loss_disambiguate1 += loss_val.item()
         loss_val.backward()
@@ -312,7 +351,7 @@ class CRAR(LearningAlgo):
         # Entropy maximization loss (through exponential) between two consecutive states
         self.optimizer_diff_s_s_.zero_grad()
         out = self.diff_s_s_(self.encoder, states_val, next_states_val)
-        loss_val = self._beta * exp_dec_error_pytorch(out)
+        loss_val = self._beta1 * exp_dec_error_pytorch(out)
         self.loss_disentangle_t += loss_val.item()
         loss_val.backward()
         torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
@@ -325,7 +364,7 @@ class CRAR(LearningAlgo):
         next_q_vals = self.full_Q_target(
             next_states_val, self.encoder_target, self.Q_target
         ).detach()
-        
+
         max_next_q_vals = torch.max(next_q_vals, dim=1)[0]
         not_terminals = 1 - terminals_val
         target = rewards_val + not_terminals * self._df * max_next_q_vals[:, None]
@@ -345,7 +384,7 @@ class CRAR(LearningAlgo):
 
         if self.update_counter % 100 == 0:
             print(
-                "self.loss_T/500., self.lossR/500., self.loss_gamma/500., self.loss_Q/500., self.loss_disentangle_t/500., self.loss_disambiguate1/500., self.loss_disambiguate2/500."
+                "self.loss_T/500., self.lossR/500., self.loss_gamma/500., self.loss_Q/500., self.loss_disentangle_t/500., self.loss_disambiguate1/500., self.loss_disambiguate2/500., self.loss_force_feature/500."
             )
             print(
                 self.loss_T / 500.0,
@@ -355,32 +394,35 @@ class CRAR(LearningAlgo):
                 self.loss_disentangle_t / 500.0,
                 self.loss_disambiguate1 / 500.0,
                 self.loss_disambiguate2 / 500.0,
+                self.loss_force_feature / 500.0,
             )
 
             if self._high_int_dim == False:
                 print("self.loss_interpret/500.")
                 print(self.loss_interpret / 500.0)
-            
-            self.wandb_logger.log({
-                "loss_T": self.loss_T / 500.0,
-                "loss_R": self.lossR / 500.0,
-                "loss_gamma": self.loss_gamma / 500.0,
-                "loss_Q": self.loss_Q / 500.0,
-                "loss_disentangle_t": self.loss_disentangle_t / 500.0,
-                "loss_disambiguate1": self.loss_disambiguate1 / 500.0,
-                "loss_disambiguate2": self.loss_disambiguate2 / 500.0,
-                "loss_interpret": self.loss_interpret / 500.0
-            })
+
+            self.wandb_logger.log(
+                {
+                    "loss_T": self.loss_T / 500.0,
+                    "loss_R": self.lossR / 500.0,
+                    "loss_gamma": self.loss_gamma / 500.0,
+                    "loss_Q": self.loss_Q / 500.0,
+                    "loss_disentangle_t": self.loss_disentangle_t / 500.0,
+                    "loss_disambiguate1": self.loss_disambiguate1 / 500.0,
+                    "loss_disambiguate2": self.loss_disambiguate2 / 500.0,
+                    "loss_force_feature": self.loss_force_feature / 500.0,
+                }
+            )
 
             self.lossR = 0
             self.loss_gamma = 0
             self.loss_Q = 0
             self.loss_T = 0
             self.loss_interpret = 0
-
             self.loss_disentangle_t = 0
             self.loss_disambiguate1 = 0
             self.loss_disambiguate2 = 0
+            self.loss_force_feature = 0
 
         if self.update_counter % 100 == 0:
             print("Number of training steps:" + str(self.update_counter) + ".")
@@ -436,7 +478,18 @@ class CRAR(LearningAlgo):
                 alpha=self._rho,
                 eps=self._rms_epsilon,
             )
-            # self.optimizer_force_features=optim.RMSprop(list(self.encoder.parameters()) + list(self.transition.parameters()), lr=self._lr, alpha=self._rho, eps=self._rms_epsilon) # This never gets updated
+            # self.optimizer_force_features = optim.RMSprop(
+            #     list(self.encoder.parameters()) + list(self.transition.parameters()),
+            #     lr=self._lr,
+            #     alpha=self._rho,
+            #     eps=self._rms_epsilon,
+            # )
+            self.optimizer_force_features = optim.RMSprop(
+                self.transition.parameters(),
+                lr=self._lr,
+                alpha=self._rho,
+                eps=self._rms_epsilon,
+            )  
 
         else:
             raise Exception(
@@ -506,7 +559,7 @@ class CRAR(LearningAlgo):
                 d=i,
                 branching_factor=[self._n_actions, 2, 2, 2, 2, 2, 2, 2],
             ).reshape(len(encoded_x), -1)
-            
+
             print("Qd,i")
             print(Qd, i)
 
