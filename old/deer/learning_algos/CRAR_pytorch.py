@@ -24,7 +24,7 @@ def mean_squared_error_p_pytorch(y_pred):
     )  # = modified mse error L_inf
 
 
-def exp_dec_error_pytorch(y_pred, C=15):
+def exp_dec_error_pytorch(y_pred, C=10):
     return torch.mean(
         torch.exp(
             -C * torch.sqrt(torch.clamp(torch.sum(y_pred ** 2, dim=-1), 0.000001, 10))

@@ -96,7 +96,7 @@ if __name__ == "__main__":
         parameters.update_rule,
         rng,
         high_int_dim=False,
-        internal_dim=2,
+        internal_dim=5,
         wandb_logger=logger,
         device=device,
     )

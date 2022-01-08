@@ -9,7 +9,6 @@ from deer.base_classes import Environment
 import matplotlib
 
 matplotlib.use("agg")
-# matplotlib.use('qt5agg')
 from mpl_toolkits.axes_grid1 import host_subplot
 import mpl_toolkits.axisartist as AA
 import matplotlib.pyplot as plt
