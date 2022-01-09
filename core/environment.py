@@ -99,16 +99,18 @@ class Environment(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def summarize_performance(self, test_data_set, *args, **kwargs):
+    def summarize_performance(self, test_data_set, learning_algo, *args, **kwargs):
         """Optional hook that can be used to show a summary of the performance of the agent on the
         environment in the current mode.
 
         Parameters
         -----------
-        test_data_set : agent.DataSet
+            :param test_data_set: agent.DataSet
             The dataset maintained by the agent in the current mode, which contains
             observations, actions taken and rewards obtained, as well as whether each transition was terminal or
             not. Refer to the documentation of agent.DataSet for more information.
+
+            :param learning_algo:
         """
         pass
 
