@@ -1,6 +1,6 @@
 .PHONY: clean
 
-EPOCHS ?= 5
+EPOCHS ?= 25
 WANDB ?= 0
 
 loop_maze:

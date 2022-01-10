@@ -10,6 +10,7 @@ from matplotlib.offsetbox import AnchoredOffsetbox, TextArea, DrawingArea, HPack
 from matplotlib.patches import Rectangle
 
 from core.environment import Environment
+from core.utils.helper_functions import polar2euclid
 
 
 class MyEnv(Environment, ABC):
@@ -20,7 +21,8 @@ class MyEnv(Environment, ABC):
         self._mode = -1
         self._mode_score = 0.0
         self._mode_episode_count = 0
-        self._size_maze = 8
+        self._size_maze_x = 10
+        self._size_maze_y = 8
         self._higher_dim_obs = kwargs["higher_dim_obs"]
         self.intern_dim = 2
         self.debug = debug
@@ -29,13 +31,13 @@ class MyEnv(Environment, ABC):
         self.create_map()
 
     def create_map(self):
-        self._map = np.zeros((self._size_maze, self._size_maze))
+        self._map = np.zeros((self._size_maze_x, self._size_maze_y))
         self._pos_agent = self.default_agent_pos
-        self._pos_goal = [self._size_maze - 2, self._size_maze - 2]
+        self._pos_goal = [self._size_maze_x - 2, self._size_maze_y - 2]
         self._map[-1, :] = 1
         self._map[0, :] = 1
-        self._map[:, 0] = 1
-        self._map[:, -1] = 1
+        # self._map[:, 0] = 1
+        # self._map[:, -1] = 1
 
     def reset(self, mode):
         self.create_map()
@@ -51,7 +53,7 @@ class MyEnv(Environment, ABC):
             self._mode = -1
 
         self._pos_agent = self.default_agent_pos
-        return [1 * [self._size_maze * [self._size_maze * [0]]]]
+        return [1 * [self._size_maze_x * [self._size_maze_y * [0]]]]
 
     def act(self, action) -> float:
         """Applies the agent action [action] on the environment.
@@ -76,11 +78,11 @@ class MyEnv(Environment, ABC):
             # new_x = _modulo(new_x + 1, self._size_maze)
             new_x += 1
         elif action == 2:
-            # new_y = _modulo(new_y - 1, self._size_maze)
-            new_y -= 1
+            new_y = _modulo(new_y - 1, self._size_maze_y)
+            # new_y -= 1
         elif action == 3:
-            # new_y = _modulo(new_y + 1, self._size_maze)
-            new_y += 1
+            new_y = _modulo(new_y + 1, self._size_maze_y)
+            # new_y += 1
 
         # If the next position is unoccupied
         if self._map[new_x, new_y] == 0:
@@ -95,9 +97,9 @@ class MyEnv(Environment, ABC):
 
     def get_input_dims(self):
         if self._higher_dim_obs:
-            return [(1, self._size_maze * 6, self._size_maze * 6)]
+            return [(1, self._size_maze_x * 6, self._size_maze_y * 6)]
         else:
-            return [(1, self._size_maze, self._size_maze)]
+            return [(1, self._size_maze_x, self._size_maze_y)]
 
     def observation_type(self, subject):
         return np.float
@@ -140,10 +142,10 @@ class MyEnv(Environment, ABC):
         reward_obs = np.zeros((6, 6))
 
         for i in indices_reward:
-            obs[i[0] * 6 : (i[0] + 1) * 6 :, i[1] * 6 : (i[1] + 1) * 6] = reward_obs
+            obs[i[0] * 6: (i[0] + 1) * 6:, i[1] * 6: (i[1] + 1) * 6] = reward_obs
 
         for i in indices_agent:
-            obs[i[0] * 6 : (i[0] + 1) * 6 :, i[1] * 6 : (i[1] + 1) * 6] = agent_obs
+            obs[i[0] * 6: (i[0] + 1) * 6:, i[1] * 6: (i[1] + 1) * 6] = agent_obs
 
         return obs
 
@@ -164,13 +166,13 @@ class MyEnv(Environment, ABC):
         labels_maze = []
 
         self.create_map()
-        for y_a in range(self._size_maze):
-            for x_a in range(self._size_maze):
+        for y_a in range(self._size_maze_y):
+            for x_a in range(self._size_maze_x):
                 state = copy.deepcopy(self._map)
                 # state[self._size_maze // 2, self._size_maze // 2] = 0
 
                 if state[x_a, y_a] == 0:
-                    if self._higher_dim_obs == True:
+                    if self._higher_dim_obs:
                         all_possib_inp.append(
                             self.get_higher_dim_obs([[x_a, y_a]], [self._pos_goal])
                         )
@@ -285,49 +287,46 @@ class MyEnv(Environment, ABC):
                     .numpy()
             )
 
-            def _polar2euclid(r, t):
-                return r * np.cos(t), r * np.sin(t)
-
             if self.intern_dim == 2:
-                # r1, t1 = x[i : i + 1], y[i : i + 1]
-                # x1, y1 = _polar2euclid(r1, t1)
-                # r2, t2 = predicted1[0, :1], predicted1[0, 1:2]
-                # x2, y2 = _polar2euclid(r2, t2)
+                r1, t1 = x[i: i + 1], y[i: i + 1]
+                x1, y1 = polar2euclid(r1, t1)
+                r2, t2 = predicted1[0, :1], predicted1[0, 1:2]
+                x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
-                    # np.concatenate([x1, x2]),
-                    # np.concatenate([y1, y2]),
-                    np.concatenate([x[i: i + 1], predicted1[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted1[0, 1:2]]),
+                    np.concatenate([x1, x2]),
+                    np.concatenate([y1, y2]),
+                    # np.concatenate([x[i: i + 1], predicted1[0, :1]]),
+                    # np.concatenate([y[i: i + 1], predicted1[0, 1:2]]),
                     color="0.9",
                     alpha=0.75,
                 )
-                # r2, t2 = predicted2[0, :1], predicted2[0, 1:2]
-                # x2, y2 = _polar2euclid(r2, t2)
+                r2, t2 = predicted2[0, :1], predicted2[0, 1:2]
+                x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
-                    # np.concatenate([x1, x2]),
-                    # np.concatenate([y1, y2]),
-                    np.concatenate([x[i: i + 1], predicted2[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted2[0, 1:2]]),
+                    np.concatenate([x1, x2]),
+                    np.concatenate([y1, y2]),
+                    # np.concatenate([x[i: i + 1], predicted2[0, :1]]),
+                    # np.concatenate([y[i: i + 1], predicted2[0, 1:2]]),
                     color="0.65",
                     alpha=0.75,
                 )
-                # r2, t2 = predicted3[0, :1], predicted3[0, 1:2]
-                # x2, y2 = _polar2euclid(r2, t2)
+                r2, t2 = predicted3[0, :1], predicted3[0, 1:2]
+                x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
-                    # np.concatenate([x1, x2]),
-                    # np.concatenate([y1, y2]),
-                    np.concatenate([x[i: i + 1], predicted3[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted3[0, 1:2]]),
+                    np.concatenate([x1, x2]),
+                    np.concatenate([y1, y2]),
+                    # np.concatenate([x[i: i + 1], predicted3[0, :1]]),
+                    # np.concatenate([y[i: i + 1], predicted3[0, 1:2]]),
                     color="0.4",
                     alpha=0.75,
                 )
-                # r2, t2 = predicted4[0, :1], predicted4[0, 1:2]
-                # x2, y2 = _polar2euclid(r2, t2)
+                r2, t2 = predicted4[0, :1], predicted4[0, 1:2]
+                x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
-                    # np.concatenate([x1, x2]),
-                    # np.concatenate([y1, y2]),
-                    np.concatenate([x[i: i + 1], predicted4[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted4[0, 1:2]]),
+                    np.concatenate([x1, x2]),
+                    np.concatenate([y1, y2]),
+                    # np.concatenate([x[i: i + 1], predicted4[0, :1]]),
+                    # np.concatenate([y[i: i + 1], predicted4[0, 1:2]]),
                     color="0.15",
                     alpha=0.75,
                 )
@@ -362,10 +361,14 @@ class MyEnv(Environment, ABC):
                 )
 
         # Plot the dots at each time step depending on the action taken
+        xs, ys = polar2euclid(all_possib_abs_states[:, 0], all_possib_abs_states[:, 1])
+
         if self.intern_dim == 2:
             ax.scatter(
-                all_possib_abs_states[:, 0],
-                all_possib_abs_states[:, 1],
+                xs,
+                ys,
+                # all_possib_abs_states[:, 0],
+                # all_possib_abs_states[:, 1],
                 marker="x",
                 edgecolors="k",
                 alpha=0.5,
@@ -424,5 +427,5 @@ class MyEnv(Environment, ABC):
 
 
 if __name__ == "__main__":
-    env = MyEnv(higher_dim_obs=True, debug=True, device="cuda")
+    env = MyEnv(higher_dim_obs=False, debug=True, device="cuda")
     print(env.observe())

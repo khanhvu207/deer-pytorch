@@ -149,7 +149,6 @@ class CRAR(LearningAlgo):
         self._high_int_dim = kwargs.get("high_int_dim", False)
         self._internal_dim = kwargs.get("internal_dim", 2)
         self._beta1 = 1.0
-        self._beta2 = 0.0001
         self.wandb_logger = wandb_logger
         self.loss_interpret = 0
         self.loss_T = 0
@@ -305,6 +304,7 @@ class CRAR(LearningAlgo):
             print(R[0])
 
         self.optimizer_diff_Tx_x_.zero_grad()
+
         out = self.diff_Tx_x_(
             states_val,
             next_states_val,
@@ -320,29 +320,6 @@ class CRAR(LearningAlgo):
         torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
         torch.nn.utils.clip_grad_norm_(self.transition.parameters(), max_norm=1.0)
         self.optimizer_diff_Tx_x_.step()
-
-        # Force feature loss
-        # TODO: Force transition vector of action 0 to point toward the origin
-        # action_type = 0
-        # action_one_hot = torch.zeros((self._batch_size, 4))
-        # action_one_hot[:, action_type] = 1
-        # action_one_hot = action_one_hot.float().to(self.device)
-        # cos_loss = torch.nn.CosineSimilarity()
-        # self.optimizer_force_features.zero_grad()
-        # vec1, vec2 = self.force_features(
-        #     states=states_val,
-        #     actions=action_one_hot,
-        #     encoder_model=self.encoder,
-        #     transition_model=self.transition,
-        # )
-        # cos_sim = cos_loss(vec1, vec2)
-        # loss = torch.nn.MSELoss()
-        # loss_val = self._beta2 * loss(cos_sim, torch.ones_like(cos_sim))
-        # self.loss_force_feature += loss_val.item()
-        # loss_val.backward()
-        # torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
-        # torch.nn.utils.clip_grad_norm_(self.transition.parameters(), max_norm=1.0)
-        # self.optimizer_force_features.step()
 
         # Calculate the loss for reward
         # self.optimizer_full_R.zero_grad()
@@ -369,6 +346,7 @@ class CRAR(LearningAlgo):
         # L_infinity ball of radius 1 loss
         self.optimizer_encoder.zero_grad()
         out = self.encoder(states_val)
+        out = out[:, 0] # Penalize the radius only
         loss_val = mean_squared_error_p(out)
         self.loss_disambiguate1 += loss_val.item()
         loss_val.backward()

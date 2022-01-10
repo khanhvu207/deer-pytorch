@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -23,3 +24,7 @@ def cosine_proximity2(y_true, y_pred):
     y_true = F.normalize(y_true[:, 0:2], p=2, dim=-1)
     y_pred = F.normalize(y_pred[:, 0:2], p=2, dim=-1)
     return -torch.sum(y_true * y_pred, dim=-1)
+
+
+def polar2euclid(r, t):
+    return r * np.cos(t), r * np.sin(t)
