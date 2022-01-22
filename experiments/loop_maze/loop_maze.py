@@ -21,13 +21,13 @@ class MyEnv(Environment, ABC):
         self._mode = -1
         self._mode_score = 0.0
         self._mode_episode_count = 0
-        self._size_maze_x = 10
-        self._size_maze_y = 8
+        self._size_maze_x = 7
+        self._size_maze_y = 5
         self._higher_dim_obs = kwargs["higher_dim_obs"]
         self.intern_dim = 2
         self.debug = debug
 
-        self.default_agent_pos = [3, 3]
+        self.default_agent_pos = [1, 1]
         self.create_map()
 
     def create_map(self):
