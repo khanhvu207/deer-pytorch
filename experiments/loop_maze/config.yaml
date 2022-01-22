@@ -11,7 +11,7 @@ env_args:
 train_args:
   internal_dim: 2
   update_rule: 'rmsprop'
-  learning_rate: 0.0005
+  learning_rate: 0.01 #0.0005
   learning_rate_decay: 0.9
   rms_decay: 0.9
   rms_epsilon: 0.0001

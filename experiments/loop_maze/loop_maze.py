@@ -21,8 +21,8 @@ class MyEnv(Environment, ABC):
         self._mode = -1
         self._mode_score = 0.0
         self._mode_episode_count = 0
-        self._size_maze_x = 7
-        self._size_maze_y = 5
+        self._size_maze_x = 8
+        self._size_maze_y = 4
         self._higher_dim_obs = kwargs["higher_dim_obs"]
         self.intern_dim = 2
         self.debug = debug
@@ -159,68 +159,49 @@ class MyEnv(Environment, ABC):
 
     def summarize_performance(self, test_data_set, learning_algo, *args, **kwargs):
         """Plot of the low-dimensional representation of the environment built by the model"""
-
-        all_possib_inp = (
-            []
-        )
-        labels_maze = []
-
+        all_possible_inputs = []
         self.create_map()
+
         for y_a in range(self._size_maze_y):
             for x_a in range(self._size_maze_x):
                 state = copy.deepcopy(self._map)
-                # state[self._size_maze // 2, self._size_maze // 2] = 0
 
                 if state[x_a, y_a] == 0:
                     if self._higher_dim_obs:
-                        all_possib_inp.append(
+                        all_possible_inputs.append(
                             self.get_higher_dim_obs([[x_a, y_a]], [self._pos_goal])
                         )
                     else:
                         state[x_a, y_a] = 0.5
-                        all_possib_inp.append(state)
+                        all_possible_inputs.append(state)
 
-        all_possib_inp = np.expand_dims(np.array(all_possib_inp, dtype="float"), axis=1)
+        all_possible_inputs = np.expand_dims(np.array(all_possible_inputs, dtype="float"), axis=1)
+        all_possible_inputs = torch.from_numpy(all_possible_inputs).float().to(self.device)
+        all_possible_abs_states = learning_algo.encoder(all_possible_inputs)
+        all_possible_abs_states = all_possible_abs_states.detach().cpu().numpy()
 
-        all_possib_inp = torch.from_numpy(all_possib_inp).float().to(self.device)
-        all_possib_abs_states = learning_algo.encoder.predict(all_possib_inp)
+        # if not self.in_terminal_state():
+        #     self._mode_episode_count += 1
+        # print(
+        #     "== Mean score per episode is {} over {} episodes ==".format(
+        #         self._mode_score / (self._mode_episode_count + 0.0001),
+        #         self._mode_episode_count,
+        #     )
+        # )
 
-        n = 1000
-        historics = []
-        for i, observ in enumerate(test_data_set.observations()[0][0:n]):
-            historics.append(np.expand_dims(observ, axis=0))
-        historics = np.array(historics)
+        # cm.ScalarMappable(cmap=cm.jet)
+        # abs_states = abs_states.detach().cpu().numpy()
 
-        historics = torch.from_numpy(historics).float().to(self.device)
-        abs_states = learning_algo.encoder.predict(historics)
-
-        actions = test_data_set.actions()[0:n]
-
-        if not self.in_terminal_state():
-            self._mode_episode_count += 1
-        print(
-            "== Mean score per episode is {} over {} episodes ==".format(
-                self._mode_score / (self._mode_episode_count + 0.0001),
-                self._mode_episode_count,
-            )
-        )
-
-        m = cm.ScalarMappable(cmap=cm.jet)
-
-        abs_states = abs_states.detach().cpu().numpy()
-        all_possib_abs_states = all_possib_abs_states.detach().cpu().numpy()
-
-        x = np.array(abs_states)[:, 0]
-        y = np.array(abs_states)[:, 1]
+        x = np.array(all_possible_abs_states)[:, 0]
+        y = np.array(all_possible_abs_states)[:, 1]
         if self.intern_dim > 2:
-            z = np.array(abs_states)[:, 2]
+            z = np.array(all_possible_abs_states)[:, 2]
 
         fig = plt.figure()
         if self.intern_dim == 2:
             ax = fig.add_subplot(111)
             ax.set_xlabel(r"$X_1$")
             ax.set_ylabel(r"$X_2$")
-
         else:
             ax = fig.add_subplot(111, projection="3d")
             ax.set_xlabel(r"$X_1$")
@@ -228,63 +209,62 @@ class MyEnv(Environment, ABC):
             ax.set_zlabel(r"$X_3$")
 
         # Plot the estimated transitions
-        for i in range(n - 1):
-            # pdb.set_trace()
+        for i in range(len(all_possible_abs_states) - 1):
             predicted1 = (
                 learning_algo.transition.predict(
                     torch.cat(
                         (
-                            torch.from_numpy(abs_states[i: i + 1]).float(),
+                            torch.from_numpy(all_possible_abs_states[i: i + 1]).float(),
                             torch.from_numpy(np.array([[1, 0, 0, 0]])).float(),
                         ),
                         -1,
                     ).to(self.device)
                 )
-                    .detach()
-                    .cpu()
-                    .numpy()
+                .detach()
+                .cpu()
+                .numpy()
             )
             predicted2 = (
                 learning_algo.transition.predict(
                     torch.cat(
                         (
-                            torch.from_numpy(abs_states[i: i + 1]).float(),
+                            torch.from_numpy(all_possible_abs_states[i: i + 1]).float(),
                             torch.from_numpy(np.array([[0, 1, 0, 0]])).float(),
                         ),
                         -1,
                     ).to(self.device)
                 )
-                    .detach()
-                    .cpu()
-                    .numpy()
+                .detach()
+                .cpu()
+                .numpy()
             )
             predicted3 = (
                 learning_algo.transition.predict(
                     torch.cat(
                         (
-                            torch.from_numpy(abs_states[i: i + 1]).float(),
+                            torch.from_numpy(all_possible_abs_states[i: i + 1]).float(),
                             torch.from_numpy(np.array([[0, 0, 1, 0]])).float(),
                         ),
                         -1,
                     ).to(self.device)
                 )
-                    .detach()
-                    .cpu()
-                    .numpy()
+                .detach()
+                .cpu()
+                .numpy()
             )
             predicted4 = (
                 learning_algo.transition.predict(
                     torch.cat(
                         (
-                            torch.from_numpy(abs_states[i: i + 1]).float(),
+                            torch.from_numpy(all_possible_abs_states[i: i + 1]).float(),
                             torch.from_numpy(np.array([[0, 0, 0, 1]])).float(),
                         ),
                         -1,
                     ).to(self.device)
                 )
-                    .detach()
-                    .cpu()
-                    .numpy()
+                .detach()
+                .cpu()
+                .numpy()
             )
 
             if self.intern_dim == 2:
@@ -361,14 +341,14 @@ class MyEnv(Environment, ABC):
                 )
 
         # Plot the dots at each time step depending on the action taken
-        xs, ys = polar2euclid(all_possib_abs_states[:, 0], all_possib_abs_states[:, 1])
+        xs, ys = polar2euclid(all_possible_abs_states[:, 0], all_possible_abs_states[:, 1])
 
         if self.intern_dim == 2:
             ax.scatter(
                 xs,
                 ys,
-                # all_possib_abs_states[:, 0],
-                # all_possib_abs_states[:, 1],
+                # all_possible_abs_states[:, 0],
+                # all_possible_abs_states[:, 1],
                 marker="x",
                 edgecolors="k",
                 alpha=0.5,
@@ -376,9 +356,9 @@ class MyEnv(Environment, ABC):
             )
         else:
             ax.scatter(
-                all_possib_abs_states[:, 0],
-                all_possib_abs_states[:, 1],
-                all_possib_abs_states[:, 2],
+                all_possible_abs_states[:, 0],
+                all_possible_abs_states[:, 1],
+                all_possible_abs_states[:, 2],
                 marker="x",
                 depthshade=True,
                 edgecolors="k",
@@ -429,3 +409,4 @@ class MyEnv(Environment, ABC):
 if __name__ == "__main__":
     env = MyEnv(higher_dim_obs=False, debug=True, device="cuda")
     print(env.observe())
+
