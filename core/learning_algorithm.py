@@ -3,6 +3,9 @@ This module defines the base class for the learning algorithms.
 
 """
 import copy
+import pprint
+from rich.console import Console
+
 import numpy as np
 
 import torch
@@ -18,6 +21,8 @@ from core.utils.helper_functions import (
 )
 
 from core.network import encoder_diff, diff_tx_x, full_float_model, full_q_model
+
+console = Console()
 
 
 class LearningAlgo(object):
@@ -119,22 +124,22 @@ class CRAR(LearningAlgo):
     """
 
     def __init__(
-        self,
-        environment,
-        rho=0.9,
-        rms_epsilon=0.0001,
-        momentum=0,
-        clip_norm=0,
-        freeze_interval=1000,
-        batch_size=32,
-        update_rule="rmsprop",
-        random_state=np.random.RandomState(),
-        double_Q=False,
-        neural_network=NN,
-        wandb_logger=None,
-        device="cpu",
-        print_every=100,
-        **kwargs
+            self,
+            environment,
+            rho=0.9,
+            rms_epsilon=0.0001,
+            momentum=0,
+            clip_norm=0,
+            freeze_interval=1000,
+            batch_size=32,
+            update_rule="rmsprop",
+            random_state=np.random.RandomState(),
+            double_Q=False,
+            neural_network=NN,
+            wandb_logger=None,
+            device="cpu",
+            print_every=100,
+            **kwargs
     ):
         """Initialize the environment"""
         LearningAlgo.__init__(self, environment, batch_size)
@@ -152,7 +157,8 @@ class CRAR(LearningAlgo):
         self.update_counter = 0
         self._high_int_dim = kwargs.get("high_int_dim", False)
         self._internal_dim = kwargs.get("internal_dim", 2)
-        self._beta1 = 0.0
+        self._beta1 = 1.0
+        self._beta2 = 0.1
         self.wandb_logger = wandb_logger
         self.loss_interpret = 0
         self.loss_T = 0
@@ -237,7 +243,7 @@ class CRAR(LearningAlgo):
         self._resetQHat()
 
     def train(
-        self, states_val, actions_val, rewards_val, next_states_val, terminals_val
+            self, states_val, actions_val, rewards_val, next_states_val, terminals_val
     ):
         """
         Train CRAR from one batch of data.
@@ -274,13 +280,13 @@ class CRAR(LearningAlgo):
         onehot_actions = torch.from_numpy(onehot_actions).float().to(self.device)
         terminals_val = (
             torch.from_numpy(terminals_val[:, None].astype(np.int32))
-            .float()
-            .to(self.device)
+                .float()
+                .to(self.device)
         )
         rewards_val = (
             torch.from_numpy(rewards_val[:, None].astype(np.int32))
-            .float()
-            .to(self.device)
+                .float()
+                .to(self.device)
         )
 
         self.optimizer_diff_Tx_x_.zero_grad()
@@ -318,7 +324,7 @@ class CRAR(LearningAlgo):
         rolled = roll(states_val, -31)
         self.optimizer_encoder_diff.zero_grad()
         out = self.encoder_diff(self.encoder, states_val, rolled)
-        loss_val = exp_dec_error(out)
+        loss_val = self._beta1 * exp_dec_error(out)
         self.loss_disambiguate2 += loss_val.item()
         loss_val.backward()
         torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
@@ -328,7 +334,7 @@ class CRAR(LearningAlgo):
         # Entropy maximization loss (through exponential) between two consecutive states
         self.optimizer_diff_s_s_.zero_grad()
         out = self.diff_s_s_(self.encoder, states_val, next_states_val)
-        loss_val = self._beta1 * exp_dec_error(out)
+        loss_val = self._beta2 * exp_dec_error(out)
         self.loss_disentangle_t += loss_val.item()
         loss_val.backward()
         torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
@@ -346,7 +352,7 @@ class CRAR(LearningAlgo):
         not_terminals = 1 - terminals_val
         target = rewards_val + not_terminals * self._df * max_next_q_vals[:, None]
 
-        self.optimizer_full_Q.zero_grad()
+        # self.optimizer_full_Q.zero_grad()
         q_vals = self.full_Q(states_val, self.encoder, self.Q).gather(
             1, torch.from_numpy(actions_val.astype(int)[:, None]).to(self.device)
         )
@@ -354,12 +360,15 @@ class CRAR(LearningAlgo):
         loss_val = loss(q_vals, target)
         loss = loss_val.item()
         self.loss_Q += loss
-        loss_val.backward()
-        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
-        torch.nn.utils.clip_grad_norm_(self.Q.parameters(), max_norm=1.0)
-        self.optimizer_full_Q.step()
+        # loss_val.backward()
+        # torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
+        # torch.nn.utils.clip_grad_norm_(self.Q.parameters(), max_norm=1.0)
+        # self.optimizer_full_Q.step()
 
         if self.update_counter % self.print_every == 0:
+            console.print("Number of training steps: " + str(self.update_counter) + ".", style="bold red")
+            self.wandb_logger.log({"nr. of training steps": self.update_counter})
+
             all_losses = {
                 "loss_T": self.loss_T,
                 "loss_R": self.lossR,
@@ -371,7 +380,7 @@ class CRAR(LearningAlgo):
                 "loss_force_feature": self.loss_force_feature,
             }
 
-            print(all_losses)
+            pprint.pprint(all_losses)
             self.wandb_logger.log(all_losses)
 
             self.lossR = 0
@@ -383,10 +392,7 @@ class CRAR(LearningAlgo):
             self.loss_disambiguate1 = 0
             self.loss_disambiguate2 = 0
             self.loss_force_feature = 0
-
-        if self.update_counter % self.print_every == 0:
-            print("Number of training steps:" + str(self.update_counter) + ".")
-            self.wandb_logger.log({"nr. of training steps": self.update_counter})
+            console.print()
 
         self.update_counter += 1
 
@@ -438,12 +444,6 @@ class CRAR(LearningAlgo):
                 alpha=self._rho,
                 eps=self._rms_epsilon,
             )
-            # self.optimizer_force_features = optim.RMSprop(
-            #     list(self.encoder.parameters()) + list(self.transition.parameters()),
-            #     lr=self._lr,
-            #     alpha=self._rho,
-            #     eps=self._rms_epsilon,
-            # )
             self.optimizer_force_features = optim.RMSprop(
                 self.transition.parameters(),
                 lr=self._lr,
@@ -479,7 +479,7 @@ class CRAR(LearningAlgo):
         """
         copy_state = copy.deepcopy(state_val)  # Required!
 
-        return self.full_Q.predict(
+        return self.full_Q(
             [np.expand_dims(state, axis=0) for state in copy_state]
         )[0]
 
@@ -506,7 +506,7 @@ class CRAR(LearningAlgo):
         The average q values with planning depth up to d for the provided pseudo-state
         """
         state_val = state_val.to(self.device)
-        encoded_x = self.encoder.predict(state_val)
+        encoded_x = self.encoder(state_val)
         QD_plan = 0
 
         for i in range(d + 1):
@@ -532,7 +532,7 @@ class CRAR(LearningAlgo):
         return QD_plan
 
     def qValues_planning_abstr(
-        self, state_abstr_val, R, gamma, T, Q, d, branching_factor=None
+            self, state_abstr_val, R, gamma, T, Q, d, branching_factor=None
     ):
         """Get the q values for pseudo-state(s) with a planning depth d.
         This function is called recursively by decreasing the depth d at every step.
@@ -568,10 +568,10 @@ class CRAR(LearningAlgo):
         if d == 0:
             if this_branching_factor < self._n_actions:
                 return np.partition(
-                    Q.predict([state_abstr_val]), -this_branching_factor
+                    Q([state_abstr_val]), -this_branching_factor
                 )[:, -this_branching_factor:]
             else:
-                return Q.predict(
+                return Q(
                     [state_abstr_val]
                 )  # no change in the order of the actions
         else:
@@ -592,10 +592,10 @@ class CRAR(LearningAlgo):
                     print("error")
             else:
                 # A subset of the actions corresponding to the best estimated Q-values are considered et each branch
-                estim_Q_values = Q.predict([state_abstr_val])
+                estim_Q_values = Q([state_abstr_val])
                 ind = np.argpartition(estim_Q_values, -this_branching_factor)[
-                    :, -this_branching_factor:
-                ]
+                      :, -this_branching_factor:
+                      ]
                 # Replacing ind if we want random branching
                 # ind = np.random.randint(0,self._n_actions,size=ind.shape)
                 repeat_identity = identity_matrix[ind].reshape(
@@ -605,31 +605,31 @@ class CRAR(LearningAlgo):
                     state_abstr_val, this_branching_factor, axis=0
                 )
 
-            r_vals_d0 = np.array(R.predict([tile3_encoded_x, repeat_identity]))
+            r_vals_d0 = np.array(R([tile3_encoded_x, repeat_identity]))
             r_vals_d0 = r_vals_d0.flatten()
 
-            gamma_vals_d0 = np.array(gamma.predict([tile3_encoded_x, repeat_identity]))
+            gamma_vals_d0 = np.array(gamma([tile3_encoded_x, repeat_identity]))
             gamma_vals_d0 = gamma_vals_d0.flatten()
 
-            next_x_predicted = T.predict([tile3_encoded_x, repeat_identity])
+            next_x_predicted = T([tile3_encoded_x, repeat_identity])
             return (
-                r_vals_d0
-                + gamma_vals_d0
-                * np.amax(
-                    self.qValues_planning_abstr(
-                        next_x_predicted,
-                        R,
-                        gamma,
-                        T,
-                        Q,
-                        d=d - 1,
-                        branching_factor=branching_factor,
-                    ).reshape(
-                        len(state_abstr_val) * this_branching_factor,
-                        branching_factor[0],
-                    ),
-                    axis=1,
-                ).flatten()
+                    r_vals_d0
+                    + gamma_vals_d0
+                    * np.amax(
+                self.qValues_planning_abstr(
+                    next_x_predicted,
+                    R,
+                    gamma,
+                    T,
+                    Q,
+                    d=d - 1,
+                    branching_factor=branching_factor,
+                ).reshape(
+                    len(state_abstr_val) * this_branching_factor,
+                    branching_factor[0],
+                ),
+                axis=1,
+            ).flatten()
             )
 
     def chooseBestAction(self, state, mode, *args, **kwargs):

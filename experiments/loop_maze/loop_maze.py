@@ -21,8 +21,8 @@ class MyEnv(Environment, ABC):
         self._mode = -1
         self._mode_score = 0.0
         self._mode_episode_count = 0
-        self._size_maze_x = 8
-        self._size_maze_y = 4
+        self._size_maze_x = 4
+        self._size_maze_y = 5
         self._higher_dim_obs = kwargs["higher_dim_obs"]
         self.intern_dim = 2
         self.debug = debug
@@ -209,9 +209,9 @@ class MyEnv(Environment, ABC):
             ax.set_zlabel(r"$X_3$")
 
         # Plot the estimated transitions
-        for i in range(len(all_possible_abs_states) - 1):
-            predicted1 = (
-                learning_algo.transition.predict(
+        for i in range(len(all_possible_abs_states)):
+            predicted_action0 = (
+                learning_algo.transition(
                     torch.cat(
                         (
                             torch.from_numpy(all_possible_abs_states[i: i + 1]).float(),
@@ -224,8 +224,8 @@ class MyEnv(Environment, ABC):
                 .cpu()
                 .numpy()
             )
-            predicted2 = (
-                learning_algo.transition.predict(
+            predicted_action1 = (
+                learning_algo.transition(
                     torch.cat(
                         (
                             torch.from_numpy(all_possible_abs_states[i: i + 1]).float(),
@@ -238,8 +238,8 @@ class MyEnv(Environment, ABC):
                 .cpu()
                 .numpy()
             )
-            predicted3 = (
-                learning_algo.transition.predict(
+            predicted_action2 = (
+                learning_algo.transition(
                     torch.cat(
                         (
                             torch.from_numpy(all_possible_abs_states[i: i + 1]).float(),
@@ -252,8 +252,8 @@ class MyEnv(Environment, ABC):
                 .cpu()
                 .numpy()
             )
-            predicted4 = (
-                learning_algo.transition.predict(
+            predicted_action3 = (
+                learning_algo.transition(
                     torch.cat(
                         (
                             torch.from_numpy(all_possible_abs_states[i: i + 1]).float(),
@@ -270,7 +270,7 @@ class MyEnv(Environment, ABC):
             if self.intern_dim == 2:
                 r1, t1 = x[i: i + 1], y[i: i + 1]
                 x1, y1 = polar2euclid(r1, t1)
-                r2, t2 = predicted1[0, :1], predicted1[0, 1:2]
+                r2, t2 = predicted_action0[0, :1], predicted_action0[0, 1:2]
                 x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
                     np.concatenate([x1, x2]),
@@ -280,7 +280,7 @@ class MyEnv(Environment, ABC):
                     color="0.9",
                     alpha=0.75,
                 )
-                r2, t2 = predicted2[0, :1], predicted2[0, 1:2]
+                r2, t2 = predicted_action1[0, :1], predicted_action1[0, 1:2]
                 x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
                     np.concatenate([x1, x2]),
@@ -290,7 +290,7 @@ class MyEnv(Environment, ABC):
                     color="0.65",
                     alpha=0.75,
                 )
-                r2, t2 = predicted3[0, :1], predicted3[0, 1:2]
+                r2, t2 = predicted_action2[0, :1], predicted_action2[0, 1:2]
                 x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
                     np.concatenate([x1, x2]),
@@ -300,7 +300,7 @@ class MyEnv(Environment, ABC):
                     color="0.4",
                     alpha=0.75,
                 )
-                r2, t2 = predicted4[0, :1], predicted4[0, 1:2]
+                r2, t2 = predicted_action3[0, :1], predicted_action3[0, 1:2]
                 x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
                     np.concatenate([x1, x2]),
@@ -312,30 +312,30 @@ class MyEnv(Environment, ABC):
                 )
             else:
                 ax.plot(
-                    np.concatenate([x[i: i + 1], predicted1[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted1[0, 1:2]]),
-                    np.concatenate([z[i: i + 1], predicted1[0, 2:3]]),
+                    np.concatenate([x[i: i + 1], predicted_action0[0, :1]]),
+                    np.concatenate([y[i: i + 1], predicted_action0[0, 1:2]]),
+                    np.concatenate([z[i: i + 1], predicted_action0[0, 2:3]]),
                     color="0.9",
                     alpha=0.75,
                 )
                 ax.plot(
-                    np.concatenate([x[i: i + 1], predicted2[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted2[0, 1:2]]),
-                    np.concatenate([z[i: i + 1], predicted2[0, 2:3]]),
+                    np.concatenate([x[i: i + 1], predicted_action1[0, :1]]),
+                    np.concatenate([y[i: i + 1], predicted_action1[0, 1:2]]),
+                    np.concatenate([z[i: i + 1], predicted_action1[0, 2:3]]),
                     color="0.65",
                     alpha=0.75,
                 )
                 ax.plot(
-                    np.concatenate([x[i: i + 1], predicted3[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted3[0, 1:2]]),
-                    np.concatenate([z[i: i + 1], predicted3[0, 2:3]]),
+                    np.concatenate([x[i: i + 1], predicted_action2[0, :1]]),
+                    np.concatenate([y[i: i + 1], predicted_action2[0, 1:2]]),
+                    np.concatenate([z[i: i + 1], predicted_action2[0, 2:3]]),
                     color="0.4",
                     alpha=0.75,
                 )
                 ax.plot(
-                    np.concatenate([x[i: i + 1], predicted4[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted4[0, 1:2]]),
-                    np.concatenate([z[i: i + 1], predicted4[0, 2:3]]),
+                    np.concatenate([x[i: i + 1], predicted_action3[0, :1]]),
+                    np.concatenate([y[i: i + 1], predicted_action3[0, 1:2]]),
+                    np.concatenate([z[i: i + 1], predicted_action3[0, 2:3]]),
                     color="0.15",
                     alpha=0.75,
                 )

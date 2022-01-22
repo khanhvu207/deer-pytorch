@@ -74,34 +74,30 @@ class Encoder(nn.Module):
 
         return x
 
-    def predict(self, s):
-        return self.forward(s)
-
 
 class Transition(nn.Module):
     def __init__(self, internal_dim, n_actions):
         super(Transition, self).__init__()
         self.gate = nn.Tanh()
+        self.internal_dim = internal_dim
+
+        # self.deep_fc_encoder = nn.Sequential(
+        #     nn.Linear(internal_dim + n_actions, 32),
+        #     self.gate,
+        #     nn.Linear(32, 128),
+        #     self.gate,
+        #     nn.Linear(128, 128),
+        #     self.gate,
+        #     nn.Linear(128, 32),
+        #     self.gate,
+        #     nn.Linear(32, internal_dim),
+        # )
 
         self.deep_fc_encoder = nn.Sequential(
-            nn.Linear(internal_dim + n_actions, 32),
+            nn.Linear(internal_dim + n_actions, 16),
             self.gate,
-            nn.Linear(32, 128),
-            self.gate,
-            nn.Linear(128, 128),
-            self.gate,
-            nn.Linear(128, 32),
-            self.gate,
-            nn.Linear(32, internal_dim),
+            nn.Linear(16, internal_dim),
         )
-
-        self.action_mask = nn.Sequential(
-            nn.Linear(n_actions, 64),
-            self.gate,
-            nn.Linear(64, internal_dim)
-        )
-
-        self.internal_dim = internal_dim
 
     def forward(self, x):
         init_state = x[:, :self.internal_dim]
@@ -112,9 +108,6 @@ class Transition(nn.Module):
         x[:, 1] = torch.fmod(x[:, 1], 2 * math.pi)
 
         return x
-
-    def predict(self, x):
-        return self.forward(x)
 
 
 class FloatModel(nn.Module):
@@ -135,9 +128,6 @@ class FloatModel(nn.Module):
         x = self.deep_fc_encoder(x)
         return x
 
-    def predict(self, x):
-        return self.forward(x)
-
 
 class QFunction(nn.Module):
     def __init__(self, internal_dim, n_actions):
@@ -156,9 +146,6 @@ class QFunction(nn.Module):
     def forward(self, x):
         x = self.deep_fc_encoder(x)
         return x
-
-    def predict(self, x):
-        return self.forward(x)
 
 
 def encoder_diff(encoder_model, s1, s2):

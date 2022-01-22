@@ -2,16 +2,14 @@ experiment_args:
   steps_per_epoch: 5000
   epochs: 25
   steps_per_test: 5000
-  period_btw_summary_perfs: 1
 
 env_args:
   higher_dim_obs: False
-  frame_skip: 2
 
 train_args:
   internal_dim: 2
   update_rule: 'rmsprop'
-  learning_rate: 0.01 #0.0005
+  learning_rate: 0.0005
   learning_rate_decay: 0.9
   rms_decay: 0.9
   rms_epsilon: 0.0001
@@ -24,7 +22,7 @@ train_args:
   replay_memory_size: 1000000
   batch_size: 32
   freeze_interval: 1000
-  deterministic: False
+  deterministic: True
   discount: 0.9
   discount_inc: 1
   discount_max: 0.99
