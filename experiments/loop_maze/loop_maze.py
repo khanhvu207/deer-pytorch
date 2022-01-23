@@ -23,7 +23,7 @@ class MyEnv(Environment, ABC):
         self._mode = -1
         self._mode_score = 0.0
         self._mode_episode_count = 0
-        self._size_maze_x = 4
+        self._size_maze_x = 5
         self._size_maze_y = 5
         self._higher_dim_obs = kwargs["higher_dim_obs"]
         self.intern_dim = 2

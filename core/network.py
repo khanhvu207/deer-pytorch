@@ -75,6 +75,7 @@ class Encoder(nn.Module):
             x = self.deep_fc_encoder(x)
 
         x[:, 0] = torch.exp(-1 + x[:, 0])
+        x[:, 1] = mod_pi(x[:, 1])
         return x
 
 
@@ -193,6 +194,34 @@ def encoder_diff(encoder_model, s1, s2):
     loss[:, 0] = s1_x - s2_x
     loss[:, 1] = s1_y - s2_y
     return loss
+
+
+def encoder_diff_angular(encoder_model, s1, s2):
+    """Instantiate a Keras model that provides the difference between two encoded pseudo-states
+
+    The model takes the two following inputs:
+    s1 : list of objects
+        Each object is a numpy array that relates to one of the observations
+        with size [batch_size * history size * size of punctual observation (which is 2D,1D or scalar)]).
+    s2 : list of objects
+        Each object is a numpy array that relates to one of the observations
+        with size [batch_size * history size * size of punctual observation (which is 2D,1D or scalar)]).
+
+    Parameters
+    -----------
+    encoder_model: instantiation of a Keras model for the encoder
+
+    Returns
+    -------
+    model with output the difference between the encoding of s1 and the encoding of s2
+    """
+
+    enc_s1 = encoder_model(s1)
+    enc_s2 = encoder_model(s2)
+    t1 = enc_s1[:, 1]
+    t2 = enc_s2[:, 1]
+    angular_dist = torch.min(2 * math.pi - torch.abs(t1 - t2), torch.abs(t1 - t2))
+    return angular_dist
 
 
 def diff_tx_x(

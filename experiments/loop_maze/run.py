@@ -59,6 +59,7 @@ if __name__ == "__main__":
         momentum=train_args["momentum"],
         clip_norm=train_args["clip_norm"],
         beta2=train_args["beta2"],
+        C=train_args["C"],
         freeze_interval=train_args["freeze_interval"],
         batch_size=train_args["batch_size"],
         update_rule=train_args["update_rule"],

@@ -22,7 +22,7 @@ from core.utils.helper_functions import (
     cosine_proximity2,
 )
 
-from core.network import encoder_diff, diff_tx_x, full_float_model, full_q_model
+from core.network import encoder_diff, encoder_diff_angular, diff_tx_x, full_float_model, full_q_model
 
 console = Console()
 
@@ -132,6 +132,7 @@ class CRAR(LearningAlgo):
             rms_epsilon=0.0001,
             momentum=0,
             clip_norm=1.0,
+            C=5,
             beta2=0.0,
             freeze_interval=1000,
             batch_size=32,
@@ -156,6 +157,7 @@ class CRAR(LearningAlgo):
         self._update_rule = update_rule
         self._freeze_interval = freeze_interval
         self._double_Q = double_Q
+        self._C = C
         self._random_state = random_state
         self.update_counter = 0
         self._high_int_dim = kwargs.get("high_int_dim", False)
@@ -312,7 +314,6 @@ class CRAR(LearningAlgo):
         # L_infinity ball of radius 1 loss
         self.optimizer_encoder.zero_grad()
         out = self.encoder(states_val)
-        # out = out[:, 0]  # Penalize the radius only
         euclid_coords = torch.zeros_like(out)
         euclid_coords[:, 0] = out[:, 0] * torch.cos(out[:, 1])
         euclid_coords[:, 1] = out[:, 0] * torch.sin(out[:, 1])
@@ -329,8 +330,13 @@ class CRAR(LearningAlgo):
 
         rolled = roll(states_val, -31)
         self.optimizer_encoder_diff.zero_grad()
+
         out = self.encoder_diff(self.encoder, states_val, rolled)
-        loss_val = self._beta1 * exp_dec_error(out)
+        loss_val = exp_dec_error(out, C=self._C)
+
+        # out_angular = encoder_diff_angular(self.encoder, states_val, rolled)
+        # loss_val += exp_dec_error(out_angular)
+
         self.loss_disambiguate2 += loss_val.item()
         loss_val.backward()
         torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=self._clip_norm)
@@ -340,7 +346,7 @@ class CRAR(LearningAlgo):
         # Entropy maximization loss (through exponential) between two consecutive states
         self.optimizer_diff_s_s_.zero_grad()
         out = self.diff_s_s_(self.encoder, states_val, next_states_val)
-        loss_val = self._beta2 * exp_dec_error(out)
+        loss_val = self._beta2 * exp_dec_error(out, C=self._C)
         self.loss_disentangle_t += loss_val.item()
         loss_val.backward()
         torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=self._clip_norm)
