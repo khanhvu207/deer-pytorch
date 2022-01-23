@@ -3,10 +3,12 @@ CRAR Neural network using PyTorch
 """
 import math
 
-import torch
-import torch.nn as nn
+from core.utils.seed_everything import *
+from torch import nn
+# import torch
+# import torch.nn as nn
 
-from core.utils.helper_functions import polar2euclid
+from core.utils.helper_functions import mod_pi
 
 
 class Encoder(nn.Module):
@@ -72,6 +74,7 @@ class Encoder(nn.Module):
             x = self.fc_after_conv(x)
             x = self.deep_fc_encoder(x)
 
+        x[:, 0] = torch.exp(-1 + x[:, 0])
         return x
 
 
@@ -80,33 +83,38 @@ class Transition(nn.Module):
         super(Transition, self).__init__()
         self.gate = nn.Tanh()
         self.internal_dim = internal_dim
-
-        # self.deep_fc_encoder = nn.Sequential(
-        #     nn.Linear(internal_dim + n_actions, 32),
-        #     self.gate,
-        #     nn.Linear(32, 128),
-        #     self.gate,
-        #     nn.Linear(128, 128),
-        #     self.gate,
-        #     nn.Linear(128, 32),
-        #     self.gate,
-        #     nn.Linear(32, internal_dim),
-        # )
+        self.n_actions = n_actions
 
         self.deep_fc_encoder = nn.Sequential(
-            nn.Linear(internal_dim + n_actions, 16),
+            nn.Linear(internal_dim + n_actions, 32),
             self.gate,
-            nn.Linear(16, internal_dim),
+            nn.Linear(32, 128),
+            self.gate,
+            nn.Linear(128, 128),
+            self.gate,
+            nn.Linear(128, 32),
+            self.gate,
+            nn.Linear(32, internal_dim),
         )
+
+        # Hard-coded matrix
+        self.hardcoded_matrix = torch.tensor([[1, 0],
+                                              [1, 0],
+                                              [0, 1],
+                                              [0, 1]]).float().cuda()
 
     def forward(self, x):
         init_state = x[:, :self.internal_dim]
-        dx = self.deep_fc_encoder(x)
-        x = dx + init_state
+        onehot_actions = x[:, -self.n_actions:]
+        mask = onehot_actions.matmul(self.hardcoded_matrix)
 
-        # Take the modulo of 2*pi for the second neuron
-        x[:, 1] = torch.fmod(x[:, 1], 2 * math.pi)
+        # Calculate the transition vector
+        delta = self.deep_fc_encoder(x)
 
+        # Apply
+        x = delta * mask + init_state
+        x[:, 0] = torch.exp(-1 + x[:, 0])
+        x[:, 1] = mod_pi(x[:, 1])
         return x
 
 
@@ -178,13 +186,13 @@ def encoder_diff(encoder_model, s1, s2):
     #     .clamp(self.eps, 100.0)
     #     .sqrt()
     # )
+
     s1_x, s1_y = enc_s1[:, 0] * torch.cos(enc_s1[:, 1]), enc_s1[:, 0] * torch.sin(enc_s1[:, 1])
     s2_x, s2_y = enc_s2[:, 0] * torch.cos(enc_s2[:, 1]), enc_s2[:, 0] * torch.sin(enc_s2[:, 1])
     loss = torch.zeros_like(enc_s1)
     loss[:, 0] = s1_x - s2_x
     loss[:, 1] = s1_y - s2_y
     return loss
-    # return enc_s1 - enc_s2
 
 
 def diff_tx_x(
@@ -244,7 +252,6 @@ def diff_tx_x(
     loss = torch.zeros_like(tx)
     loss[:, 0] = t_x - s2_x
     loss[:, 1] = t_y - s2_y
-
     return loss * not_terminal
 
 

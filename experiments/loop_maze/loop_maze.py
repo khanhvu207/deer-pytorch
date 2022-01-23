@@ -1,11 +1,13 @@
 import copy
 from abc import ABC
 
+from core.utils.seed_everything import *
+
 import matplotlib
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
-import numpy as np
-import torch
+# import numpy as np
+# import torch
 from matplotlib.offsetbox import AnchoredOffsetbox, TextArea, DrawingArea, HPacker
 from matplotlib.patches import Rectangle
 
@@ -407,6 +409,16 @@ class MyEnv(Environment, ABC):
 
 
 if __name__ == "__main__":
-    env = MyEnv(higher_dim_obs=False, debug=True, device="cuda")
-    print(env.observe())
+    # env = MyEnv(higher_dim_obs=False, debug=True, device="cuda")
+    # print(env.observe())
+
+    import math
+    mod_pi = lambda v: (v + math.pi) % (2 * math.pi) - math.pi
+    x = np.arange(-20, 20, step=0.1)
+    y = np.array(list(map(mod_pi, x)))
+    z = np.fmod(x, 2 * math.pi)
+    plt.plot(x, y, label="correct")
+    plt.plot(x, z, label="wrong")
+    plt.legend()
+    plt.savefig("mod_pi.png", dpi=300)
 

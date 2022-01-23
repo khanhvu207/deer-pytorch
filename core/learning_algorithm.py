@@ -6,10 +6,12 @@ import copy
 import pprint
 from rich.console import Console
 
-import numpy as np
+from core.utils.seed_everything import *
+# import numpy as np
 
-import torch
-import torch.optim as optim
+# import torch
+# import torch.optim as optim
+from torch import optim
 
 from core.network import NN
 from core.agent import AgentError
@@ -129,7 +131,8 @@ class CRAR(LearningAlgo):
             rho=0.9,
             rms_epsilon=0.0001,
             momentum=0,
-            clip_norm=0,
+            clip_norm=1.0,
+            beta2=0.0,
             freeze_interval=1000,
             batch_size=32,
             update_rule="rmsprop",
@@ -158,7 +161,7 @@ class CRAR(LearningAlgo):
         self._high_int_dim = kwargs.get("high_int_dim", False)
         self._internal_dim = kwargs.get("internal_dim", 2)
         self._beta1 = 1.0
-        self._beta2 = 0.1
+        self._beta2 = beta2
         self.wandb_logger = wandb_logger
         self.loss_interpret = 0
         self.loss_T = 0
@@ -302,18 +305,21 @@ class CRAR(LearningAlgo):
         loss_val = loss(out, torch.zeros_like(out))
         self.loss_T += loss_val.item()
         loss_val.backward()
-        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
-        torch.nn.utils.clip_grad_norm_(self.transition.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=self._clip_norm)
+        torch.nn.utils.clip_grad_norm_(self.transition.parameters(), max_norm=self._clip_norm)
         self.optimizer_diff_Tx_x_.step()
 
         # L_infinity ball of radius 1 loss
         self.optimizer_encoder.zero_grad()
         out = self.encoder(states_val)
-        out = out[:, 0]  # Penalize the radius only
-        loss_val = mean_squared_error_p(out)
+        # out = out[:, 0]  # Penalize the radius only
+        euclid_coords = torch.zeros_like(out)
+        euclid_coords[:, 0] = out[:, 0] * torch.cos(out[:, 1])
+        euclid_coords[:, 1] = out[:, 0] * torch.sin(out[:, 1])
+        loss_val = mean_squared_error_p(euclid_coords)
         self.loss_disambiguate1 += loss_val.item()
         loss_val.backward()
-        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=self._clip_norm)
         self.optimizer_encoder.step()
 
         # This one is very important
@@ -327,7 +333,7 @@ class CRAR(LearningAlgo):
         loss_val = self._beta1 * exp_dec_error(out)
         self.loss_disambiguate2 += loss_val.item()
         loss_val.backward()
-        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=self._clip_norm)
         self.optimizer_encoder_diff.step()
 
         # Not so much this one
@@ -337,7 +343,7 @@ class CRAR(LearningAlgo):
         loss_val = self._beta2 * exp_dec_error(out)
         self.loss_disentangle_t += loss_val.item()
         loss_val.backward()
-        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=self._clip_norm)
         self.optimizer_diff_s_s_.step()
 
         # Q Learning loss
@@ -352,7 +358,7 @@ class CRAR(LearningAlgo):
         not_terminals = 1 - terminals_val
         target = rewards_val + not_terminals * self._df * max_next_q_vals[:, None]
 
-        # self.optimizer_full_Q.zero_grad()
+        self.optimizer_full_Q.zero_grad()
         q_vals = self.full_Q(states_val, self.encoder, self.Q).gather(
             1, torch.from_numpy(actions_val.astype(int)[:, None]).to(self.device)
         )
@@ -360,10 +366,10 @@ class CRAR(LearningAlgo):
         loss_val = loss(q_vals, target)
         loss = loss_val.item()
         self.loss_Q += loss
-        # loss_val.backward()
-        # torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
-        # torch.nn.utils.clip_grad_norm_(self.Q.parameters(), max_norm=1.0)
-        # self.optimizer_full_Q.step()
+        loss_val.backward()
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.Q.parameters(), max_norm=1.0)
+        self.optimizer_full_Q.step()
 
         if self.update_counter % self.print_every == 0:
             console.print("Number of training steps: " + str(self.update_counter) + ".", style="bold red")
@@ -449,6 +455,48 @@ class CRAR(LearningAlgo):
                 lr=self._lr,
                 alpha=self._rho,
                 eps=self._rms_epsilon,
+            )
+
+        elif self._update_rule == "adamw":
+            self.optimizer_full_Q = optim.AdamW(
+                list(self.encoder.parameters()) + list(self.Q.parameters()),
+                lr=self._lr,
+                weight_decay=0.01
+            )
+            self.optimizer_diff_Tx_x_ = optim.AdamW(
+                list(self.encoder.parameters()) + list(self.transition.parameters()),
+                lr=self._lr,
+                weight_decay=0.01
+            )
+            self.optimizer_full_R = optim.AdamW(
+                list(self.encoder.parameters()) + list(self.R.parameters()),
+                lr=self._lr,
+                weight_decay=0.01
+            )
+            self.optimizer_full_gamma = optim.AdamW(
+                list(self.encoder.parameters()) + list(self.gamma.parameters()),
+                lr=self._lr,
+                weight_decay=0.01
+            )
+            self.optimizer_encoder = optim.AdamW(
+                self.encoder.parameters(),
+                lr=self._lr,
+                weight_decay=0.01
+            )
+            self.optimizer_encoder_diff = optim.AdamW(
+                self.encoder.parameters(),
+                lr=self._lr,
+                weight_decay=0.01
+            )
+            self.optimizer_diff_s_s_ = optim.AdamW(
+                self.encoder.parameters(),
+                lr=self._lr,
+                weight_decay=0.01
+            )
+            self.optimizer_force_features = optim.AdamW(
+                self.transition.parameters(),
+                lr=self._lr,
+                weight_decay=0.01
             )
 
         else:

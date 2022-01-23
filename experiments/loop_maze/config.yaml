@@ -1,6 +1,6 @@
 experiment_args:
   steps_per_epoch: 5000
-  epochs: 25
+  epochs: 20
   steps_per_test: 5000
 
 env_args:
@@ -10,11 +10,12 @@ train_args:
   internal_dim: 2
   update_rule: 'rmsprop'
   learning_rate: 0.0005
-  learning_rate_decay: 0.9
+  learning_rate_decay: 0.5
   rms_decay: 0.9
   rms_epsilon: 0.0001
   momentum: 0
   clip_norm: 1.0
+  beta2: 0.1
   epsilon_start: 1.0
   epsilon_min: 1.0
   epsilon_decay: 10000

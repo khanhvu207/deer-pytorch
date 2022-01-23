@@ -5,13 +5,15 @@ import wandb
 import jsons
 import pprint
 import logging
-import numpy as np
+# import numpy as np
 from joblib import hash, dump, load
+
 
 import core.controller as bc
 from core.agent import NeuralAgent
 from core.policy import EpsilonGreedyPolicy
 from core.learning_algorithm import CRAR
+from core.utils.seed_everything import *
 from loop_maze import MyEnv
 
 if __name__ == "__main__":
@@ -29,7 +31,7 @@ if __name__ == "__main__":
     logger_args = args["logger_args"]
 
     rng = (
-        np.random.RandomState(123456)
+        np.random.RandomState(2022)
         if train_args["deterministic"]
         else np.random.RandomState()
     )
@@ -56,6 +58,7 @@ if __name__ == "__main__":
         rms_epsilon=train_args["rms_epsilon"],
         momentum=train_args["momentum"],
         clip_norm=train_args["clip_norm"],
+        beta2=train_args["beta2"],
         freeze_interval=train_args["freeze_interval"],
         batch_size=train_args["batch_size"],
         update_rule=train_args["update_rule"],
