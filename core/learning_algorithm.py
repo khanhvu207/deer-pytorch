@@ -133,6 +133,7 @@ class CRAR(LearningAlgo):
             momentum=0,
             clip_norm=1.0,
             C=5,
+            radius=1,
             beta2=0.0,
             freeze_interval=1000,
             batch_size=32,
@@ -158,6 +159,7 @@ class CRAR(LearningAlgo):
         self._freeze_interval = freeze_interval
         self._double_Q = double_Q
         self._C = C
+        self._radius = radius
         self._random_state = random_state
         self.update_counter = 0
         self._high_int_dim = kwargs.get("high_int_dim", False)
@@ -317,7 +319,7 @@ class CRAR(LearningAlgo):
         euclid_coords = torch.zeros_like(out)
         euclid_coords[:, 0] = out[:, 0] * torch.cos(out[:, 1])
         euclid_coords[:, 1] = out[:, 0] * torch.sin(out[:, 1])
-        loss_val = mean_squared_error_p(euclid_coords)
+        loss_val = mean_squared_error_p(euclid_coords, radius=self._radius)
         self.loss_disambiguate1 += loss_val.item()
         loss_val.backward()
         torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=self._clip_norm)

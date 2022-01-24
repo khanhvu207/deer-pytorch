@@ -1,40 +1,42 @@
 import copy
 from abc import ABC
 
-from core.utils.seed_everything import *
-
 import matplotlib
-import matplotlib.cm as cm
 import matplotlib.pyplot as plt
-# import numpy as np
-# import torch
 from matplotlib.offsetbox import AnchoredOffsetbox, TextArea, DrawingArea, HPacker
 from matplotlib.patches import Rectangle
 
 from core.environment import Environment
 from core.utils.helper_functions import polar2euclid
+from core.utils.seed_everything import *
 
 
 class MyEnv(Environment, ABC):
     VALIDATION_MODE = 0
 
-    def __init__(self, device, debug=False, **kwargs):
+    def __init__(self, size_x, size_y, device, debug=False, **kwargs):
         self.device = device
         self._mode = -1
         self._mode_score = 0.0
         self._mode_episode_count = 0
-        self._size_maze_x = 5
-        self._size_maze_y = 5
+        self._size_maze_x = size_x
+        self._size_maze_y = size_y
         self._higher_dim_obs = kwargs["higher_dim_obs"]
         self.intern_dim = 2
         self.debug = debug
 
-        self.default_agent_pos = [1, 1]
+        self.default_agent_pos = [size_x // 2, size_y // 2]
         self.create_map()
+
+    def _get_agent_pos(self):
+        random_pos_x = random.randint(1, self._size_maze_x - 2)
+        random_pos_y = random.randint(0, self._size_maze_y - 1)
+        return [random_pos_x, random_pos_y]
+        # return self.default_agent_pos
 
     def create_map(self):
         self._map = np.zeros((self._size_maze_x, self._size_maze_y))
-        self._pos_agent = self.default_agent_pos
+        self._pos_agent = self._get_agent_pos()
         self._pos_goal = [self._size_maze_x - 2, self._size_maze_y - 2]
         self._map[-1, :] = 1
         self._map[0, :] = 1
@@ -54,7 +56,7 @@ class MyEnv(Environment, ABC):
         elif self._mode != -1:
             self._mode = -1
 
-        self._pos_agent = self.default_agent_pos
+        self._pos_agent = self._get_agent_pos()
         return [1 * [self._size_maze_x * [self._size_maze_y * [0]]]]
 
     def act(self, action) -> float:
@@ -409,8 +411,11 @@ class MyEnv(Environment, ABC):
 
 
 if __name__ == "__main__":
-    env = MyEnv(higher_dim_obs=False, debug=True, device="cuda")
-    env.act(action=1)
+    env = MyEnv(size_x=5,
+                size_y=5,
+                higher_dim_obs=False,
+                debug=True,
+                device="cuda")
     print(env.observe())
 
     # import math

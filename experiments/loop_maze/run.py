@@ -46,6 +46,8 @@ if __name__ == "__main__":
 
     # --- Instantiate environment ---
     env = MyEnv(
+        size_x=env_args["size_x"],
+        size_y=env_args["size_y"],
         device=train_args["device"],
         debug=False,
         higher_dim_obs=env_args["higher_dim_obs"],
@@ -60,6 +62,7 @@ if __name__ == "__main__":
         clip_norm=train_args["clip_norm"],
         beta2=train_args["beta2"],
         C=train_args["C"],
+        radius=train_args["radius"],
         freeze_interval=train_args["freeze_interval"],
         batch_size=train_args["batch_size"],
         update_rule=train_args["update_rule"],
