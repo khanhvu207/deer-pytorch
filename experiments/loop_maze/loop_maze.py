@@ -2,40 +2,46 @@ import copy
 from abc import ABC
 
 import matplotlib
-import matplotlib.cm as cm
 import matplotlib.pyplot as plt
-import numpy as np
-import torch
 from matplotlib.offsetbox import AnchoredOffsetbox, TextArea, DrawingArea, HPacker
 from matplotlib.patches import Rectangle
 
 from core.environment import Environment
+from core.utils.helper_functions import polar2euclid
+from core.utils.seed_everything import *
 
 
 class MyEnv(Environment, ABC):
     VALIDATION_MODE = 0
 
-    def __init__(self, device, debug=False, **kwargs):
+    def __init__(self, size_x, size_y, device, debug=False, **kwargs):
         self.device = device
         self._mode = -1
         self._mode_score = 0.0
         self._mode_episode_count = 0
-        self._size_maze = 8
+        self._size_maze_x = size_x
+        self._size_maze_y = size_y
         self._higher_dim_obs = kwargs["higher_dim_obs"]
         self.intern_dim = 2
         self.debug = debug
 
-        self.default_agent_pos = [3, 3]
+        self.default_agent_pos = [size_x // 2, size_y // 2]
         self.create_map()
 
+    def _get_agent_pos(self):
+        random_pos_x = random.randint(1, self._size_maze_x - 2)
+        random_pos_y = random.randint(0, self._size_maze_y - 1)
+        return [random_pos_x, random_pos_y]
+        # return self.default_agent_pos
+
     def create_map(self):
-        self._map = np.zeros((self._size_maze, self._size_maze))
-        self._pos_agent = self.default_agent_pos
-        self._pos_goal = [self._size_maze - 2, self._size_maze - 2]
+        self._map = np.zeros((self._size_maze_x, self._size_maze_y))
+        self._pos_agent = self._get_agent_pos()
+        self._pos_goal = [self._size_maze_x - 2, self._size_maze_y - 2]
         self._map[-1, :] = 1
         self._map[0, :] = 1
-        self._map[:, 0] = 1
-        self._map[:, -1] = 1
+        # self._map[:, 0] = 1
+        # self._map[:, -1] = 1
 
     def reset(self, mode):
         self.create_map()
@@ -50,8 +56,8 @@ class MyEnv(Environment, ABC):
         elif self._mode != -1:
             self._mode = -1
 
-        self._pos_agent = self.default_agent_pos
-        return [1 * [self._size_maze * [self._size_maze * [0]]]]
+        self._pos_agent = self._get_agent_pos()
+        return [1 * [self._size_maze_x * [self._size_maze_y * [0]]]]
 
     def act(self, action) -> float:
         """Applies the agent action [action] on the environment.
@@ -76,11 +82,11 @@ class MyEnv(Environment, ABC):
             # new_x = _modulo(new_x + 1, self._size_maze)
             new_x += 1
         elif action == 2:
-            # new_y = _modulo(new_y - 1, self._size_maze)
-            new_y -= 1
+            new_y = _modulo(new_y - 1, self._size_maze_y)
+            # new_y -= 1
         elif action == 3:
-            # new_y = _modulo(new_y + 1, self._size_maze)
-            new_y += 1
+            new_y = _modulo(new_y + 1, self._size_maze_y)
+            # new_y += 1
 
         # If the next position is unoccupied
         if self._map[new_x, new_y] == 0:
@@ -95,9 +101,9 @@ class MyEnv(Environment, ABC):
 
     def get_input_dims(self):
         if self._higher_dim_obs:
-            return [(1, self._size_maze * 6, self._size_maze * 6)]
+            return [(1, self._size_maze_x * 6, self._size_maze_y * 6)]
         else:
-            return [(1, self._size_maze, self._size_maze)]
+            return [(1, self._size_maze_x, self._size_maze_y)]
 
     def observation_type(self, subject):
         return np.float
@@ -140,10 +146,10 @@ class MyEnv(Environment, ABC):
         reward_obs = np.zeros((6, 6))
 
         for i in indices_reward:
-            obs[i[0] * 6 : (i[0] + 1) * 6 :, i[1] * 6 : (i[1] + 1) * 6] = reward_obs
+            obs[i[0] * 6: (i[0] + 1) * 6:, i[1] * 6: (i[1] + 1) * 6] = reward_obs
 
         for i in indices_agent:
-            obs[i[0] * 6 : (i[0] + 1) * 6 :, i[1] * 6 : (i[1] + 1) * 6] = agent_obs
+            obs[i[0] * 6: (i[0] + 1) * 6:, i[1] * 6: (i[1] + 1) * 6] = agent_obs
 
         return obs
 
@@ -157,68 +163,49 @@ class MyEnv(Environment, ABC):
 
     def summarize_performance(self, test_data_set, learning_algo, *args, **kwargs):
         """Plot of the low-dimensional representation of the environment built by the model"""
-
-        all_possib_inp = (
-            []
-        )
-        labels_maze = []
-
+        all_possible_inputs = []
         self.create_map()
-        for y_a in range(self._size_maze):
-            for x_a in range(self._size_maze):
+
+        for y_a in range(self._size_maze_y):
+            for x_a in range(self._size_maze_x):
                 state = copy.deepcopy(self._map)
-                # state[self._size_maze // 2, self._size_maze // 2] = 0
 
                 if state[x_a, y_a] == 0:
-                    if self._higher_dim_obs == True:
-                        all_possib_inp.append(
+                    if self._higher_dim_obs:
+                        all_possible_inputs.append(
                             self.get_higher_dim_obs([[x_a, y_a]], [self._pos_goal])
                         )
                     else:
                         state[x_a, y_a] = 0.5
-                        all_possib_inp.append(state)
+                        all_possible_inputs.append(state)
 
-        all_possib_inp = np.expand_dims(np.array(all_possib_inp, dtype="float"), axis=1)
+        all_possible_inputs = np.expand_dims(np.array(all_possible_inputs, dtype="float"), axis=1)
+        all_possible_inputs = torch.from_numpy(all_possible_inputs).float().to(self.device)
+        all_possible_abs_states = learning_algo.encoder(all_possible_inputs)
+        all_possible_abs_states = all_possible_abs_states.detach().cpu().numpy()
 
-        all_possib_inp = torch.from_numpy(all_possib_inp).float().to(self.device)
-        all_possib_abs_states = learning_algo.encoder.predict(all_possib_inp)
+        # if not self.in_terminal_state():
+        #     self._mode_episode_count += 1
+        # print(
+        #     "== Mean score per episode is {} over {} episodes ==".format(
+        #         self._mode_score / (self._mode_episode_count + 0.0001),
+        #         self._mode_episode_count,
+        #     )
+        # )
 
-        n = 1000
-        historics = []
-        for i, observ in enumerate(test_data_set.observations()[0][0:n]):
-            historics.append(np.expand_dims(observ, axis=0))
-        historics = np.array(historics)
+        # cm.ScalarMappable(cmap=cm.jet)
+        # abs_states = abs_states.detach().cpu().numpy()
 
-        historics = torch.from_numpy(historics).float().to(self.device)
-        abs_states = learning_algo.encoder.predict(historics)
-
-        actions = test_data_set.actions()[0:n]
-
-        if not self.in_terminal_state():
-            self._mode_episode_count += 1
-        print(
-            "== Mean score per episode is {} over {} episodes ==".format(
-                self._mode_score / (self._mode_episode_count + 0.0001),
-                self._mode_episode_count,
-            )
-        )
-
-        m = cm.ScalarMappable(cmap=cm.jet)
-
-        abs_states = abs_states.detach().cpu().numpy()
-        all_possib_abs_states = all_possib_abs_states.detach().cpu().numpy()
-
-        x = np.array(abs_states)[:, 0]
-        y = np.array(abs_states)[:, 1]
+        x = np.array(all_possible_abs_states)[:, 0]
+        y = np.array(all_possible_abs_states)[:, 1]
         if self.intern_dim > 2:
-            z = np.array(abs_states)[:, 2]
+            z = np.array(all_possible_abs_states)[:, 2]
 
         fig = plt.figure()
         if self.intern_dim == 2:
             ax = fig.add_subplot(111)
             ax.set_xlabel(r"$X_1$")
             ax.set_ylabel(r"$X_2$")
-
         else:
             ax = fig.add_subplot(111, projection="3d")
             ax.set_xlabel(r"$X_1$")
@@ -226,146 +213,146 @@ class MyEnv(Environment, ABC):
             ax.set_zlabel(r"$X_3$")
 
         # Plot the estimated transitions
-        for i in range(n - 1):
-            # pdb.set_trace()
-            predicted1 = (
-                learning_algo.transition.predict(
+        for i in range(len(all_possible_abs_states)):
+            predicted_action0 = (
+                learning_algo.transition(
                     torch.cat(
                         (
-                            torch.from_numpy(abs_states[i: i + 1]).float(),
+                            torch.from_numpy(all_possible_abs_states[i: i + 1]).float(),
                             torch.from_numpy(np.array([[1, 0, 0, 0]])).float(),
                         ),
                         -1,
                     ).to(self.device)
                 )
-                    .detach()
-                    .cpu()
-                    .numpy()
+                .detach()
+                .cpu()
+                .numpy()
             )
-            predicted2 = (
-                learning_algo.transition.predict(
+            predicted_action1 = (
+                learning_algo.transition(
                     torch.cat(
                         (
-                            torch.from_numpy(abs_states[i: i + 1]).float(),
+                            torch.from_numpy(all_possible_abs_states[i: i + 1]).float(),
                             torch.from_numpy(np.array([[0, 1, 0, 0]])).float(),
                         ),
                         -1,
                     ).to(self.device)
                 )
-                    .detach()
-                    .cpu()
-                    .numpy()
+                .detach()
+                .cpu()
+                .numpy()
             )
-            predicted3 = (
-                learning_algo.transition.predict(
+            predicted_action2 = (
+                learning_algo.transition(
                     torch.cat(
                         (
-                            torch.from_numpy(abs_states[i: i + 1]).float(),
+                            torch.from_numpy(all_possible_abs_states[i: i + 1]).float(),
                             torch.from_numpy(np.array([[0, 0, 1, 0]])).float(),
                         ),
                         -1,
                     ).to(self.device)
                 )
-                    .detach()
-                    .cpu()
-                    .numpy()
+                .detach()
+                .cpu()
+                .numpy()
             )
-            predicted4 = (
-                learning_algo.transition.predict(
+            predicted_action3 = (
+                learning_algo.transition(
                     torch.cat(
                         (
-                            torch.from_numpy(abs_states[i: i + 1]).float(),
+                            torch.from_numpy(all_possible_abs_states[i: i + 1]).float(),
                             torch.from_numpy(np.array([[0, 0, 0, 1]])).float(),
                         ),
                         -1,
                     ).to(self.device)
                 )
-                    .detach()
-                    .cpu()
-                    .numpy()
+                .detach()
+                .cpu()
+                .numpy()
             )
 
-            def _polar2euclid(r, t):
-                return r * np.cos(t), r * np.sin(t)
-
             if self.intern_dim == 2:
-                # r1, t1 = x[i : i + 1], y[i : i + 1]
-                # x1, y1 = _polar2euclid(r1, t1)
-                # r2, t2 = predicted1[0, :1], predicted1[0, 1:2]
-                # x2, y2 = _polar2euclid(r2, t2)
+                r1, t1 = x[i: i + 1], y[i: i + 1]
+                x1, y1 = polar2euclid(r1, t1)
+                r2, t2 = predicted_action0[0, :1], predicted_action0[0, 1:2]
+                x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
-                    # np.concatenate([x1, x2]),
-                    # np.concatenate([y1, y2]),
-                    np.concatenate([x[i: i + 1], predicted1[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted1[0, 1:2]]),
+                    np.concatenate([x1, x2]),
+                    np.concatenate([y1, y2]),
+                    # np.concatenate([x[i: i + 1], predicted1[0, :1]]),
+                    # np.concatenate([y[i: i + 1], predicted1[0, 1:2]]),
                     color="0.9",
                     alpha=0.75,
                 )
-                # r2, t2 = predicted2[0, :1], predicted2[0, 1:2]
-                # x2, y2 = _polar2euclid(r2, t2)
+                r2, t2 = predicted_action1[0, :1], predicted_action1[0, 1:2]
+                x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
-                    # np.concatenate([x1, x2]),
-                    # np.concatenate([y1, y2]),
-                    np.concatenate([x[i: i + 1], predicted2[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted2[0, 1:2]]),
+                    np.concatenate([x1, x2]),
+                    np.concatenate([y1, y2]),
+                    # np.concatenate([x[i: i + 1], predicted2[0, :1]]),
+                    # np.concatenate([y[i: i + 1], predicted2[0, 1:2]]),
                     color="0.65",
                     alpha=0.75,
                 )
-                # r2, t2 = predicted3[0, :1], predicted3[0, 1:2]
-                # x2, y2 = _polar2euclid(r2, t2)
+                r2, t2 = predicted_action2[0, :1], predicted_action2[0, 1:2]
+                x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
-                    # np.concatenate([x1, x2]),
-                    # np.concatenate([y1, y2]),
-                    np.concatenate([x[i: i + 1], predicted3[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted3[0, 1:2]]),
+                    np.concatenate([x1, x2]),
+                    np.concatenate([y1, y2]),
+                    # np.concatenate([x[i: i + 1], predicted3[0, :1]]),
+                    # np.concatenate([y[i: i + 1], predicted3[0, 1:2]]),
                     color="0.4",
                     alpha=0.75,
                 )
-                # r2, t2 = predicted4[0, :1], predicted4[0, 1:2]
-                # x2, y2 = _polar2euclid(r2, t2)
+                r2, t2 = predicted_action3[0, :1], predicted_action3[0, 1:2]
+                x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
-                    # np.concatenate([x1, x2]),
-                    # np.concatenate([y1, y2]),
-                    np.concatenate([x[i: i + 1], predicted4[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted4[0, 1:2]]),
+                    np.concatenate([x1, x2]),
+                    np.concatenate([y1, y2]),
+                    # np.concatenate([x[i: i + 1], predicted4[0, :1]]),
+                    # np.concatenate([y[i: i + 1], predicted4[0, 1:2]]),
                     color="0.15",
                     alpha=0.75,
                 )
             else:
                 ax.plot(
-                    np.concatenate([x[i: i + 1], predicted1[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted1[0, 1:2]]),
-                    np.concatenate([z[i: i + 1], predicted1[0, 2:3]]),
+                    np.concatenate([x[i: i + 1], predicted_action0[0, :1]]),
+                    np.concatenate([y[i: i + 1], predicted_action0[0, 1:2]]),
+                    np.concatenate([z[i: i + 1], predicted_action0[0, 2:3]]),
                     color="0.9",
                     alpha=0.75,
                 )
                 ax.plot(
-                    np.concatenate([x[i: i + 1], predicted2[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted2[0, 1:2]]),
-                    np.concatenate([z[i: i + 1], predicted2[0, 2:3]]),
+                    np.concatenate([x[i: i + 1], predicted_action1[0, :1]]),
+                    np.concatenate([y[i: i + 1], predicted_action1[0, 1:2]]),
+                    np.concatenate([z[i: i + 1], predicted_action1[0, 2:3]]),
                     color="0.65",
                     alpha=0.75,
                 )
                 ax.plot(
-                    np.concatenate([x[i: i + 1], predicted3[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted3[0, 1:2]]),
-                    np.concatenate([z[i: i + 1], predicted3[0, 2:3]]),
+                    np.concatenate([x[i: i + 1], predicted_action2[0, :1]]),
+                    np.concatenate([y[i: i + 1], predicted_action2[0, 1:2]]),
+                    np.concatenate([z[i: i + 1], predicted_action2[0, 2:3]]),
                     color="0.4",
                     alpha=0.75,
                 )
                 ax.plot(
-                    np.concatenate([x[i: i + 1], predicted4[0, :1]]),
-                    np.concatenate([y[i: i + 1], predicted4[0, 1:2]]),
-                    np.concatenate([z[i: i + 1], predicted4[0, 2:3]]),
+                    np.concatenate([x[i: i + 1], predicted_action3[0, :1]]),
+                    np.concatenate([y[i: i + 1], predicted_action3[0, 1:2]]),
+                    np.concatenate([z[i: i + 1], predicted_action3[0, 2:3]]),
                     color="0.15",
                     alpha=0.75,
                 )
 
         # Plot the dots at each time step depending on the action taken
+        xs, ys = polar2euclid(all_possible_abs_states[:, 0], all_possible_abs_states[:, 1])
+
         if self.intern_dim == 2:
             ax.scatter(
-                all_possib_abs_states[:, 0],
-                all_possib_abs_states[:, 1],
+                xs,
+                ys,
+                # all_possible_abs_states[:, 0],
+                # all_possible_abs_states[:, 1],
                 marker="x",
                 edgecolors="k",
                 alpha=0.5,
@@ -373,9 +360,9 @@ class MyEnv(Environment, ABC):
             )
         else:
             ax.scatter(
-                all_possib_abs_states[:, 0],
-                all_possib_abs_states[:, 1],
-                all_possib_abs_states[:, 2],
+                all_possible_abs_states[:, 0],
+                all_possible_abs_states[:, 1],
+                all_possible_abs_states[:, 2],
                 marker="x",
                 depthshade=True,
                 edgecolors="k",
@@ -424,5 +411,20 @@ class MyEnv(Environment, ABC):
 
 
 if __name__ == "__main__":
-    env = MyEnv(higher_dim_obs=True, debug=True, device="cuda")
+    env = MyEnv(size_x=5,
+                size_y=5,
+                higher_dim_obs=False,
+                debug=True,
+                device="cuda")
     print(env.observe())
+
+    # import math
+    # mod_pi = lambda v: (v + math.pi) % (2 * math.pi) - math.pi
+    # x = np.arange(-20, 20, step=0.1)
+    # y = np.array(list(map(mod_pi, x)))
+    # z = np.fmod(x, 2 * math.pi)
+    # plt.plot(x, y, label="correct")
+    # plt.plot(x, z, label="wrong")
+    # plt.legend()
+    # plt.savefig("mod_pi.png", dpi=300)
+

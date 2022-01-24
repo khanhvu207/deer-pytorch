@@ -3,19 +3,32 @@ This module defines the base class for the learning algorithms.
 
 """
 import copy
-import numpy as np
+import pprint
+from rich.console import Console
 
-import torch
-import torch.optim as optim
+from core.utils.seed_everything import *
+# import numpy as np
+
+# import torch
+# import torch.optim as optim
+from torch import optim
 
 from core.network import NN
 from core.agent import AgentError
 from core.environment import Environment
-from core.utils.helper_functions import mean_squared_error_p, exp_dec_error, cosine_proximity2
+from core.utils.helper_functions import (
+    mean_squared_error_p,
+    exp_dec_error,
+    cosine_proximity2,
+)
+
+from core.network import encoder_diff, encoder_diff_angular, diff_tx_x, full_float_model, full_q_model
+
+console = Console()
 
 
 class LearningAlgo(object):
-    """ All the Q-networks, actor-critic networks, etc. should inherit this interface.
+    """All the Q-networks, actor-critic networks, etc. should inherit this interface.
 
     Parameters
     -----------
@@ -34,23 +47,21 @@ class LearningAlgo(object):
         self._batch_size = batch_size
 
     def train(self, states, actions, rewards, nextStates, terminals):
-        """ This method performs the training step (e.g. using Bellman iteration in a deep Q-network)
+        """This method performs the training step (e.g. using Bellman iteration in a deep Q-network)
         for one batch of tuples.
         """
         raise NotImplementedError()
 
     def chooseBestAction(self, state):
-        """ Get the best action for a pseudo-state
-        """
+        """Get the best action for a pseudo-state"""
         raise NotImplementedError()
 
     def qValues(self, state):
-        """ Get the q value for one pseudo-state
-        """
+        """Get the q value for one pseudo-state"""
         raise NotImplementedError()
 
     def setLearningRate(self, lr):
-        """ Setting the learning rate
+        """Setting the learning rate
         NB: The learning rate has usually to be set in the optimizer, hence this function should
         be overridden. Otherwise, the learning rate change is likely not to be taken into account
 
@@ -62,26 +73,24 @@ class LearningAlgo(object):
         self._lr = lr
 
     def setDiscountFactor(self, df):
-        """ Setting the discount factor
+        """Setting the discount factor
 
         Parameters
         -----------
         df : float
             The discount factor that has to bet set
         """
-        if df < 0. or df > 1.:
+        if df < 0.0 or df > 1.0:
             raise AgentError("The discount factor should be in [0,1]")
 
         self._df = df
 
     def learningRate(self):
-        """ Getting the learning rate
-        """
+        """Getting the learning rate"""
         return self._lr
 
     def discountFactor(self):
-        """ Getting the discount factor
-        """
+        """Getting the discount factor"""
         return self._df
 
 
@@ -122,7 +131,10 @@ class CRAR(LearningAlgo):
             rho=0.9,
             rms_epsilon=0.0001,
             momentum=0,
-            clip_norm=0,
+            clip_norm=1.0,
+            C=5,
+            radius=1,
+            beta2=0.0,
             freeze_interval=1000,
             batch_size=32,
             update_rule="rmsprop",
@@ -131,11 +143,13 @@ class CRAR(LearningAlgo):
             neural_network=NN,
             wandb_logger=None,
             device="cpu",
+            print_every=100,
             **kwargs
     ):
         """Initialize the environment"""
         LearningAlgo.__init__(self, environment, batch_size)
         self.device = device
+        self.print_every = print_every
 
         self._rho = rho
         self._rms_epsilon = rms_epsilon
@@ -144,12 +158,14 @@ class CRAR(LearningAlgo):
         self._update_rule = update_rule
         self._freeze_interval = freeze_interval
         self._double_Q = double_Q
+        self._C = C
+        self._radius = radius
         self._random_state = random_state
         self.update_counter = 0
         self._high_int_dim = kwargs.get("high_int_dim", False)
         self._internal_dim = kwargs.get("internal_dim", 2)
         self._beta1 = 1.0
-        self._beta2 = 0.0001
+        self._beta2 = beta2
         self.wandb_logger = wandb_logger
         self.loss_interpret = 0
         self.loss_T = 0
@@ -169,13 +185,11 @@ class CRAR(LearningAlgo):
             high_int_dim=self._high_int_dim,
             internal_dim=self._internal_dim,
         )
-        self.encoder = self.learn_and_plan.encoder_model().to(self.device)
-        self.encoder_diff = self.learn_and_plan.encoder_diff_model
-
-        self.R = self.learn_and_plan.float_model().to(self.device)
-        self.Q = self.learn_and_plan.Q_model().to(self.device)
-        self.gamma = self.learn_and_plan.float_model().to(self.device)
-        self.transition = self.learn_and_plan.transition_model().to(self.device)
+        self.encoder = self.learn_and_plan.encoder.to(self.device)
+        self.R = self.learn_and_plan.float_model.to(self.device)
+        self.Q = self.learn_and_plan.q_function.to(self.device)
+        self.gamma = self.learn_and_plan.float_model.to(self.device)
+        self.transition = self.learn_and_plan.transition.to(self.device)
 
         # Watch models gradient
         wandb_logger.watch(self.encoder, log="all")
@@ -184,19 +198,20 @@ class CRAR(LearningAlgo):
         wandb_logger.watch(self.gamma, log="all")
         wandb_logger.watch(self.transition, log="all")
 
-        self.full_Q = self.learn_and_plan.full_Q_model
+        self.encoder_diff = encoder_diff
+        self.full_Q = full_q_model
 
         # used to fit rewards
-        self.full_R = self.learn_and_plan.full_float_model
+        self.full_R = full_float_model
 
         # used to fit gamma
-        self.full_gamma = self.learn_and_plan.full_float_model
+        self.full_gamma = full_float_model
 
         # used to fit transitions
-        self.diff_Tx_x_ = self.learn_and_plan.diff_Tx_x_
+        self.diff_Tx_x_ = diff_tx_x
 
         # constraint on consecutive t
-        self.diff_s_s_ = self.learn_and_plan.encoder_diff_model
+        self.diff_s_s_ = encoder_diff
 
         # used to force features variations
         if not self._high_int_dim:
@@ -216,15 +231,13 @@ class CRAR(LearningAlgo):
             high_int_dim=self._high_int_dim,
             internal_dim=self._internal_dim,
         )
-        self.encoder_target = self.learn_and_plan_target.encoder_model().to(self.device)
-        self.Q_target = self.learn_and_plan_target.Q_model().to(self.device)
-        self.R_target = self.learn_and_plan_target.float_model().to(self.device)
-        self.gamma_target = self.learn_and_plan_target.float_model().to(self.device)
-        self.transition_target = self.learn_and_plan_target.transition_model().to(
-            self.device
-        )
+        self.encoder_target = self.learn_and_plan_target.encoder.to(self.device)
+        self.Q_target = self.learn_and_plan_target.q_function.to(self.device)
+        self.R_target = self.learn_and_plan_target.float_model.to(self.device)
+        self.gamma_target = self.learn_and_plan_target.float_model.to(self.device)
+        self.transition_target = self.learn_and_plan_target.transition.to(self.device)
 
-        self.full_Q_target = self.learn_and_plan_target.full_Q_model
+        self.full_Q_target = full_q_model
 
         self.all_models_target = [
             self.encoder_target,
@@ -265,17 +278,10 @@ class CRAR(LearningAlgo):
         Average loss of the batch training for the Q-values (RMSE)
         Individual (square) losses for the Q-values for each tuple
         """
-
         onehot_actions = np.zeros((self._batch_size, self._n_actions))
         onehot_actions[np.arange(self._batch_size), actions_val] = 1
-        onehot_actions_rand = np.zeros((self._batch_size, self._n_actions))
-        onehot_actions_rand[
-            np.arange(self._batch_size), np.random.randint(0, 2, (32))
-        ] = 1
-
         states_val = list(states_val)
         next_states_val = list(next_states_val)
-
         states_val = torch.from_numpy(states_val[0]).float().to(self.device)
         next_states_val = torch.from_numpy(next_states_val[0]).float().to(self.device)
         onehot_actions = torch.from_numpy(onehot_actions).float().to(self.device)
@@ -290,20 +296,6 @@ class CRAR(LearningAlgo):
                 .to(self.device)
         )
 
-        Es_ = self.encoder.predict(next_states_val).detach()
-        Es = self.encoder.predict(states_val).detach()
-        ETs = self.transition.predict(torch.cat((Es, onehot_actions), dim=-1)).detach()
-        R = self.R.predict(torch.cat((Es, onehot_actions), -1)).detach()
-
-        if self.update_counter % 100 == 0:
-            print("Printing a few elements useful for debugging:")
-            print("actions_val[0], rewards_val[0], terminals_val[0]")
-            print(actions_val[0], rewards_val[0], terminals_val[0])
-            print("Es[0], ETs[0], Es_[0]")
-            print(Es[0], ETs[0], Es_[0])
-            print("R[0]")
-            print(R[0])
-
         self.optimizer_diff_Tx_x_.zero_grad()
         out = self.diff_Tx_x_(
             states_val,
@@ -317,62 +309,20 @@ class CRAR(LearningAlgo):
         loss_val = loss(out, torch.zeros_like(out))
         self.loss_T += loss_val.item()
         loss_val.backward()
-        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
-        torch.nn.utils.clip_grad_norm_(self.transition.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=self._clip_norm)
+        torch.nn.utils.clip_grad_norm_(self.transition.parameters(), max_norm=self._clip_norm)
         self.optimizer_diff_Tx_x_.step()
-
-        # Force feature loss
-        # TODO: Force transition vector of action 0 to point toward the origin
-        # action_type = 0
-        # action_one_hot = torch.zeros((self._batch_size, 4))
-        # action_one_hot[:, action_type] = 1
-        # action_one_hot = action_one_hot.float().to(self.device)
-        # cos_loss = torch.nn.CosineSimilarity()
-        # self.optimizer_force_features.zero_grad()
-        # vec1, vec2 = self.force_features(
-        #     states=states_val,
-        #     actions=action_one_hot,
-        #     encoder_model=self.encoder,
-        #     transition_model=self.transition,
-        # )
-        # cos_sim = cos_loss(vec1, vec2)
-        # loss = torch.nn.MSELoss()
-        # loss_val = self._beta2 * loss(cos_sim, torch.ones_like(cos_sim))
-        # self.loss_force_feature += loss_val.item()
-        # loss_val.backward()
-        # torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
-        # torch.nn.utils.clip_grad_norm_(self.transition.parameters(), max_norm=1.0)
-        # self.optimizer_force_features.step()
-
-        # Calculate the loss for reward
-        # self.optimizer_full_R.zero_grad()
-        # out = self.full_R(states_val, onehot_actions, self.encoder, self.R)
-        # loss = torch.nn.MSELoss()
-        # loss_val = loss(out, rewards_val)
-        # self.lossR += loss_val.data.numpy()
-        # loss_val.backward()
-        # for param in list(self.encoder.parameters()) + list(self.R.parameters()):
-        # param.grad.data.clamp_(-1, 1)
-        # self.optimizer_full_R.step()
-
-        # Calculate loss for gamma
-        # self.optimizer_full_gamma.zero_grad()
-        # out = self.full_gamma(states_val, onehot_actions, self.encoder, self.gamma)
-        # loss = torch.nn.MSELoss()
-        # loss_val = loss(out, (1 - terminals_val[:]) * self._df)
-        # self.loss_gamma += loss_val.data.numpy()
-        # loss_val.backward()
-        # for param in list(self.encoder.parameters()) + list(self.gamma.parameters()):
-        # param.grad.data.clamp_(-1, 1)
-        # self.optimizer_full_gamma.step()
 
         # L_infinity ball of radius 1 loss
         self.optimizer_encoder.zero_grad()
         out = self.encoder(states_val)
-        loss_val = mean_squared_error_p(out)
+        euclid_coords = torch.zeros_like(out)
+        euclid_coords[:, 0] = out[:, 0] * torch.cos(out[:, 1])
+        euclid_coords[:, 1] = out[:, 0] * torch.sin(out[:, 1])
+        loss_val = mean_squared_error_p(euclid_coords, radius=self._radius)
         self.loss_disambiguate1 += loss_val.item()
         loss_val.backward()
-        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=self._clip_norm)
         self.optimizer_encoder.step()
 
         # This one is very important
@@ -382,21 +332,26 @@ class CRAR(LearningAlgo):
 
         rolled = roll(states_val, -31)
         self.optimizer_encoder_diff.zero_grad()
+
         out = self.encoder_diff(self.encoder, states_val, rolled)
-        loss_val = exp_dec_error(out)
+        loss_val = exp_dec_error(out, C=self._C)
+
+        # out_angular = encoder_diff_angular(self.encoder, states_val, rolled)
+        # loss_val += exp_dec_error(out_angular)
+
         self.loss_disambiguate2 += loss_val.item()
         loss_val.backward()
-        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=self._clip_norm)
         self.optimizer_encoder_diff.step()
 
         # Not so much this one
         # Entropy maximization loss (through exponential) between two consecutive states
         self.optimizer_diff_s_s_.zero_grad()
         out = self.diff_s_s_(self.encoder, states_val, next_states_val)
-        loss_val = self._beta1 * exp_dec_error(out)
+        loss_val = self._beta2 * exp_dec_error(out, C=self._C)
         self.loss_disentangle_t += loss_val.item()
         loss_val.backward()
-        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(self.encoder.parameters(), max_norm=self._clip_norm)
         self.optimizer_diff_s_s_.step()
 
         # Q Learning loss
@@ -424,39 +379,23 @@ class CRAR(LearningAlgo):
         torch.nn.utils.clip_grad_norm_(self.Q.parameters(), max_norm=1.0)
         self.optimizer_full_Q.step()
 
-        if self.update_counter % 100 == 0:
-            print(
-                "self.loss_T/500., self.lossR/500., self.loss_gamma/500., self.loss_Q/500., "
-                "self.loss_disentangle_t/500., self.loss_disambiguate1/500., self.loss_disambiguate2/500., "
-                "self.loss_force_feature/500. "
-            )
-            print(
-                self.loss_T / 500.0,
-                self.lossR / 500.0,
-                self.loss_gamma / 500.0,
-                self.loss_Q / 500.0,
-                self.loss_disentangle_t / 500.0,
-                self.loss_disambiguate1 / 500.0,
-                self.loss_disambiguate2 / 500.0,
-                self.loss_force_feature / 500.0,
-            )
+        if self.update_counter % self.print_every == 0:
+            console.print("Number of training steps: " + str(self.update_counter) + ".", style="bold red")
+            self.wandb_logger.log({"nr. of training steps": self.update_counter})
 
-            if not self._high_int_dim:
-                print("self.loss_interpret/500.")
-                print(self.loss_interpret / 500.0)
+            all_losses = {
+                "loss_T": self.loss_T,
+                "loss_R": self.lossR,
+                "loss_gamma": self.loss_gamma,
+                "loss_Q": self.loss_Q,
+                "loss_disentangle_t": self.loss_disentangle_t,
+                "loss_disambiguate1": self.loss_disambiguate1,
+                "loss_disambiguate2": self.loss_disambiguate2,
+                "loss_force_feature": self.loss_force_feature,
+            }
 
-            self.wandb_logger.log(
-                {
-                    "loss_T": self.loss_T / 500.0,
-                    "loss_R": self.lossR / 500.0,
-                    "loss_gamma": self.loss_gamma / 500.0,
-                    "loss_Q": self.loss_Q / 500.0,
-                    "loss_disentangle_t": self.loss_disentangle_t / 500.0,
-                    "loss_disambiguate1": self.loss_disambiguate1 / 500.0,
-                    "loss_disambiguate2": self.loss_disambiguate2 / 500.0,
-                    "loss_force_feature": self.loss_force_feature / 500.0,
-                }
-            )
+            pprint.pprint(all_losses)
+            self.wandb_logger.log(all_losses)
 
             self.lossR = 0
             self.loss_gamma = 0
@@ -467,10 +406,7 @@ class CRAR(LearningAlgo):
             self.loss_disambiguate1 = 0
             self.loss_disambiguate2 = 0
             self.loss_force_feature = 0
-
-        if self.update_counter % 100 == 0:
-            print("Number of training steps:" + str(self.update_counter) + ".")
-            self.wandb_logger.log({"nr. of training steps": self.update_counter})
+            console.print()
 
         self.update_counter += 1
 
@@ -522,17 +458,53 @@ class CRAR(LearningAlgo):
                 alpha=self._rho,
                 eps=self._rms_epsilon,
             )
-            # self.optimizer_force_features = optim.RMSprop(
-            #     list(self.encoder.parameters()) + list(self.transition.parameters()),
-            #     lr=self._lr,
-            #     alpha=self._rho,
-            #     eps=self._rms_epsilon,
-            # )
             self.optimizer_force_features = optim.RMSprop(
                 self.transition.parameters(),
                 lr=self._lr,
                 alpha=self._rho,
                 eps=self._rms_epsilon,
+            )
+
+        elif self._update_rule == "adamw":
+            self.optimizer_full_Q = optim.AdamW(
+                list(self.encoder.parameters()) + list(self.Q.parameters()),
+                lr=self._lr,
+                weight_decay=0.01
+            )
+            self.optimizer_diff_Tx_x_ = optim.AdamW(
+                list(self.encoder.parameters()) + list(self.transition.parameters()),
+                lr=self._lr,
+                weight_decay=0.01
+            )
+            self.optimizer_full_R = optim.AdamW(
+                list(self.encoder.parameters()) + list(self.R.parameters()),
+                lr=self._lr,
+                weight_decay=0.01
+            )
+            self.optimizer_full_gamma = optim.AdamW(
+                list(self.encoder.parameters()) + list(self.gamma.parameters()),
+                lr=self._lr,
+                weight_decay=0.01
+            )
+            self.optimizer_encoder = optim.AdamW(
+                self.encoder.parameters(),
+                lr=self._lr,
+                weight_decay=0.01
+            )
+            self.optimizer_encoder_diff = optim.AdamW(
+                self.encoder.parameters(),
+                lr=self._lr,
+                weight_decay=0.01
+            )
+            self.optimizer_diff_s_s_ = optim.AdamW(
+                self.encoder.parameters(),
+                lr=self._lr,
+                weight_decay=0.01
+            )
+            self.optimizer_force_features = optim.AdamW(
+                self.transition.parameters(),
+                lr=self._lr,
+                weight_decay=0.01
             )
 
         else:
@@ -563,7 +535,7 @@ class CRAR(LearningAlgo):
         """
         copy_state = copy.deepcopy(state_val)  # Required!
 
-        return self.full_Q.predict(
+        return self.full_Q(
             [np.expand_dims(state, axis=0) for state in copy_state]
         )[0]
 
@@ -590,7 +562,7 @@ class CRAR(LearningAlgo):
         The average q values with planning depth up to d for the provided pseudo-state
         """
         state_val = state_val.to(self.device)
-        encoded_x = self.encoder.predict(state_val)
+        encoded_x = self.encoder(state_val)
         QD_plan = 0
 
         for i in range(d + 1):
@@ -652,10 +624,10 @@ class CRAR(LearningAlgo):
         if d == 0:
             if this_branching_factor < self._n_actions:
                 return np.partition(
-                    Q.predict([state_abstr_val]), -this_branching_factor
+                    Q([state_abstr_val]), -this_branching_factor
                 )[:, -this_branching_factor:]
             else:
-                return Q.predict(
+                return Q(
                     [state_abstr_val]
                 )  # no change in the order of the actions
         else:
@@ -676,7 +648,7 @@ class CRAR(LearningAlgo):
                     print("error")
             else:
                 # A subset of the actions corresponding to the best estimated Q-values are considered et each branch
-                estim_Q_values = Q.predict([state_abstr_val])
+                estim_Q_values = Q([state_abstr_val])
                 ind = np.argpartition(estim_Q_values, -this_branching_factor)[
                       :, -this_branching_factor:
                       ]
@@ -689,13 +661,13 @@ class CRAR(LearningAlgo):
                     state_abstr_val, this_branching_factor, axis=0
                 )
 
-            r_vals_d0 = np.array(R.predict([tile3_encoded_x, repeat_identity]))
+            r_vals_d0 = np.array(R([tile3_encoded_x, repeat_identity]))
             r_vals_d0 = r_vals_d0.flatten()
 
-            gamma_vals_d0 = np.array(gamma.predict([tile3_encoded_x, repeat_identity]))
+            gamma_vals_d0 = np.array(gamma([tile3_encoded_x, repeat_identity]))
             gamma_vals_d0 = gamma_vals_d0.flatten()
 
-            next_x_predicted = T.predict([tile3_encoded_x, repeat_identity])
+            next_x_predicted = T([tile3_encoded_x, repeat_identity])
             return (
                     r_vals_d0
                     + gamma_vals_d0

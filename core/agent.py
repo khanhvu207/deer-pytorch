@@ -106,7 +106,10 @@ class NeuralAgent(object):
 
         if train_policy is None:
             self._train_policy = EpsilonGreedyPolicy(
-                learning_algo, environment.get_num_action(), random_state, 0.1
+                learning_algo=learning_algo,
+                n_actions=environment.get_num_action(),
+                random_state=random_state,
+                epsilon=0.1,
             )
         else:
             self._train_policy = train_policy
@@ -117,9 +120,9 @@ class NeuralAgent(object):
             )
         else:
             self._test_policy = test_policy
+
         self.gathering_data = True  # Whether the agent is gathering data or not
         self.sticky_action = 1  # Number of times the agent is forced to take the same action as part of one actual
-        # time step
 
     def setControllersActive(self, toDisable, active):
         """Activate controller"""

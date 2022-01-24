@@ -1,125 +1,97 @@
 import os
-import sys
+import yaml
 import json
 import wandb
 import jsons
+import pprint
 import logging
-import numpy as np
+# import numpy as np
 from joblib import hash, dump, load
 
-import torch
 
 import core.controller as bc
 from core.agent import NeuralAgent
-from core.utils.arg_parser import process_args
 from core.policy import EpsilonGreedyPolicy
 from core.learning_algorithm import CRAR
-
+from core.utils.seed_everything import *
 from loop_maze import MyEnv
-
-
-class Defaults:
-    # ----------------------
-    # Experiment Parameters
-    # ----------------------
-    STEPS_PER_EPOCH = 5000
-    EPOCHS = 5
-    STEPS_PER_TEST = 1000
-    PERIOD_BTW_SUMMARY_PERFS = 1
-
-    # ----------------------
-    # Environment Parameters
-    # ----------------------
-    FRAME_SKIP = 2
-
-    # ----------------------
-    # DQN Agent parameters:
-    # ----------------------
-    UPDATE_RULE = "rmsprop"
-    LEARNING_RATE = 0.0005
-    LEARNING_RATE_DECAY = 0.9
-    DISCOUNT = 0.9
-    DISCOUNT_INC = 1
-    DISCOUNT_MAX = 0.99
-    RMS_DECAY = 0.9
-    RMS_EPSILON = 0.0001
-    MOMENTUM = 0
-    CLIP_NORM = 1.0
-    EPSILON_START = 1.0
-    EPSILON_MIN = 1.0
-    EPSILON_DECAY = 10000
-    UPDATE_FREQUENCY = 1
-    REPLAY_MEMORY_SIZE = 1000000
-    BATCH_SIZE = 32
-    FREEZE_INTERVAL = 1000
-    DETERMINISTIC = False
-
-    # -----------------------
-    # Online logger
-    # -----------------------
-    WANDB_ONLINE_MODE = 0
-
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-HIGHER_DIM_OBS = False
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    # --- Parse parameters ---
-    parameters = process_args(sys.argv[1:], Defaults)
-    if parameters.deterministic:
-        rng = np.random.RandomState(123456)
-    else:
-        rng = np.random.RandomState()
+    # Load config
+    with open("config.yaml") as f:
+        args = yaml.safe_load(f)
+
+    pprint.PrettyPrinter(indent=2).pprint(args)
+
+    experiment_args = args["experiment_args"]
+    env_args = args["env_args"]
+    train_args = args["train_args"]
+    logger_args = args["logger_args"]
+
+    rng = (
+        np.random.RandomState(2022)
+        if train_args["deterministic"]
+        else np.random.RandomState()
+    )
 
     # --- Instantiate logger ---
     logger = wandb.init(
-        mode="online" if parameters.online_logger else "offline",
+        mode="online" if logger_args["online_mode"] else "offline",
         project="deer",
         entity="kvu207",
-        config=json.loads(jsons.dumps(Defaults)),
+        config=json.loads(jsons.dumps(args)),
     )
 
     # --- Instantiate environment ---
-    env = MyEnv(device=device, debug=False, higher_dim_obs=HIGHER_DIM_OBS)
+    env = MyEnv(
+        size_x=env_args["size_x"],
+        size_y=env_args["size_y"],
+        device=train_args["device"],
+        debug=False,
+        higher_dim_obs=env_args["higher_dim_obs"],
+    )
 
     # --- Instantiate learning_algo ---
     learning_algo = CRAR(
-        env,
-        parameters.rms_decay,
-        parameters.rms_epsilon,
-        parameters.momentum,
-        parameters.clip_norm,
-        parameters.freeze_interval,
-        parameters.batch_size,
-        parameters.update_rule,
-        rng,
+        environment=env,
+        rho=train_args["rms_decay"],
+        rms_epsilon=train_args["rms_epsilon"],
+        momentum=train_args["momentum"],
+        clip_norm=train_args["clip_norm"],
+        beta2=train_args["beta2"],
+        C=train_args["C"],
+        radius=train_args["radius"],
+        freeze_interval=train_args["freeze_interval"],
+        batch_size=train_args["batch_size"],
+        update_rule=train_args["update_rule"],
+        random_state=rng,
         high_int_dim=False,
-        internal_dim=5,
+        internal_dim=train_args["internal_dim"],
         wandb_logger=logger,
-        device=device,
+        device=train_args["device"],
     )
 
     # --- Instantiate agent ---
     agent = NeuralAgent(
         environment=env,
         learning_algo=learning_algo,
-        replay_memory_size=parameters.replay_memory_size,
+        replay_memory_size=train_args["replay_memory_size"],
         replay_start_size=max(
             env.get_input_dims()[i][0] for i in range(len(env.get_input_dims()))
         ),
-        batch_size=parameters.batch_size,
+        batch_size=train_args["batch_size"],
         random_state=rng,
-        train_policy=None,
+        train_policy=EpsilonGreedyPolicy(learning_algo, env.get_num_action(), rng, 1.0),
         test_policy=EpsilonGreedyPolicy(learning_algo, env.get_num_action(), rng, 1.0),
     )
 
     # --- Create unique filename for FindBestController ---
-    h = hash(vars(parameters), hash_name="sha1")
-    fname = "test_" + h
+    h = hash(args, hash_name="sha1")
+    filename = "test_" + h
     print("The parameters hash is: {}".format(h))
-    print("The parameters are: {}".format(parameters))
+    print("The parameters are: {}".format(args))
 
     # As for the discount factor and the learning rate, one can update periodically the parameter of the epsilon-greedy
     # policy implemented by the agent. This controllers has a bit more capabilities, as it allows one to choose more
@@ -127,9 +99,9 @@ if __name__ == "__main__":
     # episode or epoch (or never, hence the resetEvery='none').
     agent.attach(
         bc.EpsilonController(
-            initial_e=parameters.epsilon_start,
-            e_decays=parameters.epsilon_decay,
-            e_min=parameters.epsilon_min,
+            initial_e=train_args["epsilon_start"],
+            e_decays=train_args["epsilon_decay"],
+            e_min=train_args["epsilon_min"],
             evaluate_on="action",
             periodicity=1,
             reset_every="none",
@@ -148,8 +120,8 @@ if __name__ == "__main__":
     # wish to update the learning rate after every training epoch (periodicity=1), according to the parameters given.
     agent.attach(
         bc.LearningRateController(
-            initial_learning_rate=parameters.learning_rate,
-            learning_rate_decay=parameters.learning_rate_decay,
+            initial_learning_rate=train_args["learning_rate"],
+            learning_rate_decay=train_args["learning_rate_decay"],
             periodicity=1,
         )
     )
@@ -157,9 +129,9 @@ if __name__ == "__main__":
     # Same for the discount factor.
     agent.attach(
         bc.DiscountFactorController(
-            initial_discount_factor=parameters.discount,
-            discount_factor_growth=parameters.discount_inc,
-            discount_factor_max=parameters.discount_max,
+            initial_discount_factor=train_args["discount"],
+            discount_factor_growth=train_args["discount_inc"],
+            discount_factor_max=train_args["discount_max"],
             periodicity=1,
         )
     )
@@ -170,7 +142,7 @@ if __name__ == "__main__":
     agent.attach(
         bc.TrainerController(
             evaluate_on="action",
-            periodicity=parameters.update_frequency,
+            periodicity=train_args["update_frequency"],
             show_episode_avg_v_value=True,
             show_avg_bellman_residual=True,
         )
@@ -188,7 +160,7 @@ if __name__ == "__main__":
     agent.attach(
         bc.FindBestController(
             validation_id=MyEnv.VALIDATION_MODE,
-            unique_fname=fname,
+            unique_fname=filename,
         )
     )
 
@@ -199,7 +171,7 @@ if __name__ == "__main__":
     agent.attach(
         bc.InterleavedTestEpochController(
             id=MyEnv.VALIDATION_MODE,
-            epoch_length=parameters.steps_per_test,
+            epoch_length=experiment_args["steps_per_test"],
             periodicity=1,
             show_score=True,
             summarize_every=1,
@@ -211,11 +183,16 @@ if __name__ == "__main__":
         os.mkdir("params")
     except Exception:
         pass
-    dump(vars(parameters), "params/" + fname + ".jldump")
+
+    dump(args, "params/" + filename + ".jldump")
+
     agent.gathering_data = False
-    agent.run(parameters.epochs, parameters.steps_per_epoch)
+    agent.run(
+        n_epochs=experiment_args["epochs"],
+        epoch_length=experiment_args["steps_per_epoch"],
+    )
 
     # --- Show results ---
-    basename = "scores/" + fname
+    basename = "scores/" + filename
     scores = load(basename + "_scores.jldump")
     print(scores)
