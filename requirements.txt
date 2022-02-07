@@ -1,6 +1,8 @@
-torch>=1.9
+torch
 numpy
 matplotlib
 joblib
 pyyaml
 rich
+wandb
+jsons

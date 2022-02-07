@@ -6,7 +6,15 @@ import math
 from core.utils.seed_everything import *
 from torch import nn
 
-from core.utils.helper_functions import mod_pi
+from core.utils.helper_functions import mod_pi, angle_dist
+
+
+class Sawtooth(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return mod_pi(x)
 
 
 class Encoder(nn.Module):
@@ -15,20 +23,27 @@ class Encoder(nn.Module):
         self.num_channel, self.h, self.w = input_dim[0]
 
         self.gate = nn.Tanh()
-        self.hidden = 256
+        self.hidden = 32 #256
         self.fc_low_dim = nn.Sequential(
             nn.Linear(self.num_channel * self.h * self.w, self.hidden),
             self.gate,
         )
         self.deep_fc_encoder = nn.Sequential(
-            nn.Linear(self.hidden, 128),
+            nn.Linear(self.hidden, 32),
             self.gate,
-            nn.Linear(128, 64),
+            nn.Linear(32, 32),
             self.gate,
-            nn.Linear(64, 16),
-            self.gate,
-            nn.Linear(16, internal_dim),
+            nn.Linear(32, internal_dim),
         )
+        # self.deep_fc_encoder = nn.Sequential(
+        #     nn.Linear(self.hidden, 128),
+        #     self.gate,
+        #     nn.Linear(128, 64),
+        #     self.gate,
+        #     nn.Linear(64, 16),
+        #     self.gate,
+        #     nn.Linear(16, internal_dim),
+        # )
         self.conv_encoder = nn.Sequential(
             nn.Conv2d(
                 in_channels=self.num_channel,
@@ -60,6 +75,7 @@ class Encoder(nn.Module):
         self.fc_after_conv = nn.Sequential(
             nn.Linear(self.flatten_dim_after_conv, 200), self.gate
         )
+        self.sawtooth = Sawtooth()
 
     def forward(self, x):
         if self.h <= 12 and self.w <= 12:
@@ -72,8 +88,8 @@ class Encoder(nn.Module):
             x = self.fc_after_conv(x)
             x = self.deep_fc_encoder(x)
 
-        x[:, 0] = torch.exp(-1 + x[:, 0])
-        x[:, 1] = mod_pi(x[:, 1])
+        # Sawtooth activation
+        x = self.sawtooth(x)
         return x
 
 
@@ -87,11 +103,7 @@ class Transition(nn.Module):
         self.deep_fc_encoder = nn.Sequential(
             nn.Linear(internal_dim + n_actions, 32),
             self.gate,
-            nn.Linear(32, 128),
-            self.gate,
-            nn.Linear(128, 128),
-            self.gate,
-            nn.Linear(128, 32),
+            nn.Linear(32, 32),
             self.gate,
             nn.Linear(32, internal_dim),
         )
@@ -100,7 +112,9 @@ class Transition(nn.Module):
         self.hardcoded_matrix = torch.tensor([[1, 0],
                                               [1, 0],
                                               [0, 1],
-                                              [0, 1]]).float().cuda()
+                                              [0, 1]]).float()
+
+        self.sawtooth = Sawtooth()
 
     def forward(self, x):
         init_state = x[:, :self.internal_dim]
@@ -112,8 +126,9 @@ class Transition(nn.Module):
 
         # Apply
         x = delta * mask + init_state
-        x[:, 0] = torch.exp(-1 + x[:, 0])
-        x[:, 1] = mod_pi(x[:, 1])
+
+        # Sawtooth activation
+        x = self.sawtooth(x)
         return x
 
 
@@ -178,48 +193,9 @@ def encoder_diff(encoder_model, s1, s2):
     enc_s1 = encoder_model(s1)
     enc_s2 = encoder_model(s2)
 
-    # r1, t1 = enc_s1[:, 0], enc_s1[:, 1]
-    # r2, t2 = enc_s2[:, 0], enc_s2[:, 1]
-    # loss = (
-    #     (r1 ** 2 + r2 ** 2 - 2.0 * r1 * r2 * torch.cos(t1 - t2))
-    #     .clamp(self.eps, 100.0)
-    #     .sqrt()
-    # )
-
-    s1_x, s1_y = enc_s1[:, 0] * torch.cos(enc_s1[:, 1]), enc_s1[:, 0] * torch.sin(enc_s1[:, 1])
-    s2_x, s2_y = enc_s2[:, 0] * torch.cos(enc_s2[:, 1]), enc_s2[:, 0] * torch.sin(enc_s2[:, 1])
-    loss = torch.zeros_like(enc_s1)
-    loss[:, 0] = s1_x - s2_x
-    loss[:, 1] = s1_y - s2_y
+    # Calculate the distance between two angles
+    loss = angle_dist(enc_s1, enc_s2)
     return loss
-
-
-def encoder_diff_angular(encoder_model, s1, s2):
-    """Instantiate a Keras model that provides the difference between two encoded pseudo-states
-
-    The model takes the two following inputs:
-    s1 : list of objects
-        Each object is a numpy array that relates to one of the observations
-        with size [batch_size * history size * size of punctual observation (which is 2D,1D or scalar)]).
-    s2 : list of objects
-        Each object is a numpy array that relates to one of the observations
-        with size [batch_size * history size * size of punctual observation (which is 2D,1D or scalar)]).
-
-    Parameters
-    -----------
-    encoder_model: instantiation of a Keras model for the encoder
-
-    Returns
-    -------
-    model with output the difference between the encoding of s1 and the encoding of s2
-    """
-
-    enc_s1 = encoder_model(s1)
-    enc_s2 = encoder_model(s2)
-    t1 = enc_s1[:, 1]
-    t2 = enc_s2[:, 1]
-    angular_dist = torch.min(2 * math.pi - torch.abs(t1 - t2), torch.abs(t1 - t2))
-    return angular_dist
 
 
 def diff_tx_x(
@@ -263,22 +239,7 @@ def diff_tx_x(
     enc_s2 = encoder_model(s2)
     tx = transition_model(torch.cat((enc_s1, action), -1))
 
-    # return (tx - enc_s2) * not_terminal
-
-    # r1, t1 = tx[:, 0], tx[:, 1]
-    # r2, t2 = enc_s2[:, 0], enc_s2[:, 1]
-    # loss = (
-    #     (r1 ** 2 + r2 ** 2 - 2.0 * r1 * r2 * torch.cos(t1 - t2))
-    #     .clamp(self.eps, 100.0)
-    #     .sqrt()
-    # )
-
-    # translate to euclidean coordinate and compute the L2 loss
-    t_x, t_y = tx[:, 0] * torch.cos(tx[:, 1]), tx[:, 0] * torch.sin(tx[:, 1])
-    s2_x, s2_y = enc_s2[:, 0] * torch.cos(enc_s2[:, 1]), enc_s2[:, 0] * torch.sin(enc_s2[:, 1])
-    loss = torch.zeros_like(tx)
-    loss[:, 0] = t_x - s2_x
-    loss[:, 1] = t_y - s2_y
+    loss = angle_dist(tx, enc_s2)
     return loss * not_terminal
 
 

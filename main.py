@@ -13,7 +13,15 @@ from core.agent import NeuralAgent
 from core.policy import EpsilonGreedyPolicy
 from core.learning_algorithm import CRAR
 from core.utils.seed_everything import *
-from loop_maze import MyEnv
+
+import experiments.loop_maze.loop_maze as loop_maze
+import experiments.loop_maze_full.loop_maze_full as loop_maze_full
+
+env_mapping = {
+    "loop_maze": loop_maze.MyEnv,
+    "loop_maze_full": loop_maze_full.MyEnv
+}
+
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
@@ -44,6 +52,7 @@ if __name__ == "__main__":
     )
 
     # --- Instantiate environment ---
+    MyEnv = env_mapping[env_args["env_name"]]
     env = MyEnv(
         size_x=env_args["size_x"],
         size_y=env_args["size_y"],

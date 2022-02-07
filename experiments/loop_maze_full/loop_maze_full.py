@@ -29,19 +29,14 @@ class MyEnv(Environment, ABC):
         self.create_map()
 
     def _get_agent_pos(self):
-        random_pos_x = random.randint(1, self._size_maze_x - 2)
+        random_pos_x = random.randint(0, self._size_maze_x - 1)
         random_pos_y = random.randint(0, self._size_maze_y - 1)
         return [random_pos_x, random_pos_y]
-        # return self.default_agent_pos
 
     def create_map(self):
         self._map = np.zeros((self._size_maze_x, self._size_maze_y))
         self._pos_agent = self._get_agent_pos()
         self._pos_goal = [self._size_maze_x - 2, self._size_maze_y - 2]
-        # self._map[-1, :] = 1
-        # self._map[0, :] = 1
-        # self._map[:, 0] = 1
-        # self._map[:, -1] = 1
 
     def reset(self, mode):
         self.create_map()
@@ -198,6 +193,7 @@ class MyEnv(Environment, ABC):
 
         x = np.array(all_possible_abs_states)[:, 0]
         y = np.array(all_possible_abs_states)[:, 1]
+        z = None
         if self.intern_dim > 2:
             z = np.array(all_possible_abs_states)[:, 2]
 
@@ -272,45 +268,27 @@ class MyEnv(Environment, ABC):
             )
 
             if self.intern_dim == 2:
-                r1, t1 = x[i: i + 1], y[i: i + 1]
-                x1, y1 = polar2euclid(r1, t1)
-                r2, t2 = predicted_action0[0, :1], predicted_action0[0, 1:2]
-                x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
-                    np.concatenate([x1, x2]),
-                    np.concatenate([y1, y2]),
-                    # np.concatenate([x[i: i + 1], predicted1[0, :1]]),
-                    # np.concatenate([y[i: i + 1], predicted1[0, 1:2]]),
+                    np.concatenate([x[i: i + 1], predicted_action0[0, :1]]),
+                    np.concatenate([y[i: i + 1], predicted_action0[0, 1:2]]),
                     color="0.9",
                     alpha=0.75,
                 )
-                r2, t2 = predicted_action1[0, :1], predicted_action1[0, 1:2]
-                x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
-                    np.concatenate([x1, x2]),
-                    np.concatenate([y1, y2]),
-                    # np.concatenate([x[i: i + 1], predicted2[0, :1]]),
-                    # np.concatenate([y[i: i + 1], predicted2[0, 1:2]]),
+                    np.concatenate([x[i: i + 1], predicted_action1[0, :1]]),
+                    np.concatenate([y[i: i + 1], predicted_action1[0, 1:2]]),
                     color="0.65",
                     alpha=0.75,
                 )
-                r2, t2 = predicted_action2[0, :1], predicted_action2[0, 1:2]
-                x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
-                    np.concatenate([x1, x2]),
-                    np.concatenate([y1, y2]),
-                    # np.concatenate([x[i: i + 1], predicted3[0, :1]]),
-                    # np.concatenate([y[i: i + 1], predicted3[0, 1:2]]),
+                    np.concatenate([x[i: i + 1], predicted_action2[0, :1]]),
+                    np.concatenate([y[i: i + 1], predicted_action2[0, 1:2]]),
                     color="0.4",
                     alpha=0.75,
                 )
-                r2, t2 = predicted_action3[0, :1], predicted_action3[0, 1:2]
-                x2, y2 = polar2euclid(r2, t2)
                 ax.plot(
-                    np.concatenate([x1, x2]),
-                    np.concatenate([y1, y2]),
-                    # np.concatenate([x[i: i + 1], predicted4[0, :1]]),
-                    # np.concatenate([y[i: i + 1], predicted4[0, 1:2]]),
+                    np.concatenate([x[i: i + 1], predicted_action3[0, :1]]),
+                    np.concatenate([y[i: i + 1], predicted_action3[0, 1:2]]),
                     color="0.15",
                     alpha=0.75,
                 )
@@ -345,19 +323,16 @@ class MyEnv(Environment, ABC):
                 )
 
         # Plot the dots at each time step depending on the action taken
-        xs, ys = polar2euclid(all_possible_abs_states[:, 0], all_possible_abs_states[:, 1])
-
         if self.intern_dim == 2:
             ax.scatter(
-                xs,
-                ys,
-                # all_possible_abs_states[:, 0],
-                # all_possible_abs_states[:, 1],
+                all_possible_abs_states[:, 0],
+                all_possible_abs_states[:, 1],
                 marker="x",
                 edgecolors="k",
                 alpha=0.5,
                 s=50,
             )
+            axes_lims = [ax.get_xlim(), ax.get_ylim()]
         else:
             ax.scatter(
                 all_possible_abs_states[:, 0],
@@ -369,11 +344,12 @@ class MyEnv(Environment, ABC):
                 alpha=0.5,
                 s=50,
             )
-
-        if self.intern_dim == 2:
-            axes_lims = [ax.get_xlim(), ax.get_ylim()]
-        else:
             axes_lims = [ax.get_xlim(), ax.get_ylim(), ax.get_zlim()]
+
+        # if self.intern_dim == 2:
+        #     axes_lims = [ax.get_xlim(), ax.get_ylim()]
+        # else:
+        #     axes_lims = [ax.get_xlim(), ax.get_ylim(), ax.get_zlim()]
 
         # Plot the legend for transition estimates
         box1b = TextArea(

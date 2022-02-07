@@ -35,5 +35,9 @@ def mod_pi(x):
     return torch.fmod(x + math.pi, 2 * math.pi) - math.pi
 
 
+def angle_dist(a1, a2):
+    return torch.minimum(2 * math.pi - torch.abs(a1 - a2), torch.abs(a1 - a2))
+
+
 if __name__ == "__main__":
     print(polar2euclid(r=-0.9, t=2.3))
