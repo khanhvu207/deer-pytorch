@@ -1,5 +1,6 @@
 import os
 import yaml
+import fire
 import json
 import wandb
 import jsons
@@ -23,7 +24,7 @@ env_mapping = {
 }
 
 
-if __name__ == "__main__":
+def main(seed=2022):
     logging.basicConfig(level=logging.INFO)
 
     # Load config
@@ -37,8 +38,11 @@ if __name__ == "__main__":
     train_args = args["train_args"]
     logger_args = args["logger_args"]
 
+    # Set seed
+    set_seed(seed)
+
     rng = (
-        np.random.RandomState(2022)
+        np.random.RandomState(seed)
         if train_args["deterministic"]
         else np.random.RandomState()
     )
@@ -57,6 +61,7 @@ if __name__ == "__main__":
         size_x=env_args["size_x"],
         size_y=env_args["size_y"],
         device=train_args["device"],
+        random_start=env_args["random_start"],
         debug=False,
         higher_dim_obs=env_args["higher_dim_obs"],
     )
@@ -64,10 +69,12 @@ if __name__ == "__main__":
     # --- Instantiate learning_algo ---
     learning_algo = CRAR(
         environment=env,
-        rho=train_args["rms_decay"],
-        rms_epsilon=train_args["rms_epsilon"],
-        momentum=train_args["momentum"],
+        # rho=train_args["rms_decay"],
+        # rms_epsilon=train_args["rms_epsilon"],
+        # momentum=train_args["momentum"],
+        seed=seed,
         clip_norm=train_args["clip_norm"],
+        beta1=train_args["beta1"],
         beta2=train_args["beta2"],
         C=train_args["C"],
         radius=train_args["radius"],
@@ -75,6 +82,7 @@ if __name__ == "__main__":
         batch_size=train_args["batch_size"],
         update_rule=train_args["update_rule"],
         random_state=rng,
+        num_training_steps=experiment_args["steps_per_epoch"] * experiment_args["epochs"],
         high_int_dim=False,
         internal_dim=train_args["internal_dim"],
         wandb_logger=logger,
@@ -91,8 +99,8 @@ if __name__ == "__main__":
         ),
         batch_size=train_args["batch_size"],
         random_state=rng,
-        train_policy=EpsilonGreedyPolicy(learning_algo, env.get_num_action(), rng, 1.0),
-        test_policy=EpsilonGreedyPolicy(learning_algo, env.get_num_action(), rng, 1.0),
+        train_policy=EpsilonGreedyPolicy(learning_algo, env.get_num_action(), rng, epsilon=1.0),
+        test_policy=EpsilonGreedyPolicy(learning_algo, env.get_num_action(), rng, epsilon=0.0),
     )
 
     # --- Create unique filename for FindBestController ---
@@ -204,3 +212,7 @@ if __name__ == "__main__":
     basename = "scores/" + filename
     scores = load(basename + "_scores.jldump")
     print(scores)
+
+
+if __name__ == "__main__":
+    fire.Fire(main)

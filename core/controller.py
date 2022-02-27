@@ -585,6 +585,8 @@ class FindBestController(Controller):
             return
 
         mode = agent.mode()
+        print(f"Current mode: {mode}")
+
         if mode == self._validation_id:
             score, _ = agent.totalRewardOverLastTest()
             self._validationScores.append(score)
@@ -599,6 +601,8 @@ class FindBestController(Controller):
             self._testScores.append(score)
         else:
             self._trainingEpochCount += 1
+
+        print(self._validationScores)
 
         # live plotting of reward over time
         if mode == self._validation_id:

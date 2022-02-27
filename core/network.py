@@ -5,6 +5,7 @@ import math
 
 from core.utils.seed_everything import *
 from torch import nn
+from torch.nn.functional import cosine_similarity, softmax
 
 from core.utils.helper_functions import mod_pi, angle_dist
 
@@ -17,33 +18,64 @@ class Sawtooth(nn.Module):
         return mod_pi(x)
 
 
+class BasicMLP(nn.Module):
+    def __init__(self, input_dim, output_dim, use_dropout=False):
+        super().__init__()
+        self.gate = nn.Tanh()
+        self.dropout = nn.Dropout(p=0.1) if use_dropout else nn.Identity()
+
+        self.fc = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            self.gate,
+            self.dropout,
+            nn.Linear(128, 64),
+            self.gate,
+            self.dropout,
+            nn.Linear(64, 16),
+            self.gate,
+            self.dropout,
+            nn.Linear(16, output_dim),
+        )
+
+    def forward(self, x):
+        return self.fc(x)
+
+
+class Decoder(nn.Module):
+    def __init__(self, internal_dim, input_dim):
+        super(Decoder, self).__init__()
+        self.num_channel, self.h, self.w = input_dim[0]
+
+        self.gate = nn.Tanh()
+
+        self.decoder = nn.Sequential(
+            nn.Linear(internal_dim, 16),
+            self.gate,
+            nn.Linear(16, 32),
+            self.gate,
+            nn.Linear(32, 128),
+            self.gate,
+            nn.Linear(128, self.num_channel * self.h * self.w),
+        )
+
+    def forward(self, x):
+        return self.decoder(x)
+
+
 class Encoder(nn.Module):
     def __init__(self, internal_dim, input_dim):
         super(Encoder, self).__init__()
         self.num_channel, self.h, self.w = input_dim[0]
 
         self.gate = nn.Tanh()
-        self.hidden = 32 #256
+        self.hidden = 256
         self.fc_low_dim = nn.Sequential(
             nn.Linear(self.num_channel * self.h * self.w, self.hidden),
             self.gate,
         )
-        self.deep_fc_encoder = nn.Sequential(
-            nn.Linear(self.hidden, 32),
-            self.gate,
-            nn.Linear(32, 32),
-            self.gate,
-            nn.Linear(32, internal_dim),
-        )
-        # self.deep_fc_encoder = nn.Sequential(
-        #     nn.Linear(self.hidden, 128),
-        #     self.gate,
-        #     nn.Linear(128, 64),
-        #     self.gate,
-        #     nn.Linear(64, 16),
-        #     self.gate,
-        #     nn.Linear(16, internal_dim),
-        # )
+
+        self.mlp = BasicMLP(input_dim=self.hidden, output_dim=internal_dim)
+
         self.conv_encoder = nn.Sequential(
             nn.Conv2d(
                 in_channels=self.num_channel,
@@ -69,11 +101,9 @@ class Encoder(nn.Module):
             self.gate,
             nn.MaxPool2d(kernel_size=3),
         )
-        self.flatten_dim_after_conv = (
-                32 * (self.h // 2 // 3) * (self.w // 2 // 3)
-        )
+        self.flatten_dim_after_conv = 32 * (self.h // 2 // 3) * (self.w // 2 // 3)
         self.fc_after_conv = nn.Sequential(
-            nn.Linear(self.flatten_dim_after_conv, 200), self.gate
+            nn.Linear(self.flatten_dim_after_conv, self.hidden), self.gate
         )
         self.sawtooth = Sawtooth()
 
@@ -81,54 +111,51 @@ class Encoder(nn.Module):
         if self.h <= 12 and self.w <= 12:
             x = torch.flatten(x, start_dim=1)
             x = self.fc_low_dim(x)
-            x = self.deep_fc_encoder(x)
+            x = self.mlp(x)
         else:
             x = self.conv_encoder(x)
             x = torch.flatten(x, start_dim=1)
             x = self.fc_after_conv(x)
-            x = self.deep_fc_encoder(x)
+            x = self.mlp(x)
 
         # Sawtooth activation
-        x = self.sawtooth(x)
+        # x = self.sawtooth(x)
         return x
 
 
 class Transition(nn.Module):
     def __init__(self, internal_dim, n_actions):
         super(Transition, self).__init__()
-        self.gate = nn.Tanh()
         self.internal_dim = internal_dim
         self.n_actions = n_actions
 
-        self.deep_fc_encoder = nn.Sequential(
-            nn.Linear(internal_dim + n_actions, 32),
-            self.gate,
-            nn.Linear(32, 32),
-            self.gate,
-            nn.Linear(32, internal_dim),
+        self.mlp = BasicMLP(
+            input_dim=internal_dim + n_actions,
+            output_dim=internal_dim,
+            use_dropout=False,
         )
-
-        # Hard-coded matrix
-        self.hardcoded_matrix = torch.tensor([[1, 0],
-                                              [1, 0],
-                                              [0, 1],
-                                              [0, 1]]).float()
-
         self.sawtooth = Sawtooth()
 
+        # Hard-coded matrix
+        self.hardcoded_matrix = torch.tensor([[1, 0], [1, 0], [0, 1], [0, 1]]).float()
+
+        # Learned transformation
+        self.linear_proj = nn.Linear(n_actions, 2, bias=False)
+
     def forward(self, x):
-        init_state = x[:, :self.internal_dim]
-        onehot_actions = x[:, -self.n_actions:]
-        mask = onehot_actions.matmul(self.hardcoded_matrix)
+        init_state = x[:, : self.internal_dim]
+        # onehot_actions = x[:, -self.n_actions :]
+        # mask = onehot_actions.matmul(self.hardcoded_matrix)
 
         # Calculate the transition vector
-        delta = self.deep_fc_encoder(x)
+        delta = self.mlp(x)
 
         # Apply
-        x = delta * mask + init_state
+        x = delta + init_state
+        # x = delta * mask + init_state
 
-        # Sawtooth activation
-        x = self.sawtooth(x)
+        # # Sawtooth activation
+        # x = self.sawtooth(x)
         return x
 
 
@@ -194,8 +221,16 @@ def encoder_diff(encoder_model, s1, s2):
     enc_s2 = encoder_model(s2)
 
     # Calculate the distance between two angles
-    loss = angle_dist(enc_s1, enc_s2)
+    # loss = angle_dist(enc_s1, enc_s2)
+    loss = enc_s1 - enc_s2
     return loss
+
+
+def encoder_diff_angular(encoder_model, s1, s2):
+    enc_s1 = encoder_model(s1)
+    enc_s2 = encoder_model(s2)
+    arc_margin = cosine_similarity(enc_s1, enc_s2)
+    return arc_margin
 
 
 def diff_tx_x(
@@ -239,7 +274,8 @@ def diff_tx_x(
     enc_s2 = encoder_model(s2)
     tx = transition_model(torch.cat((enc_s1, action), -1))
 
-    loss = angle_dist(tx, enc_s2)
+    # loss = angle_dist(tx, enc_s2)
+    loss = tx - enc_s2
     return loss * not_terminal
 
 
@@ -338,10 +374,21 @@ class NN:
         self.eps = 0.000001
 
         # Networks
-        self.encoder = Encoder(internal_dim=self.internal_dim, input_dim=self._input_dimensions)
-        self.transition = Transition(internal_dim=self.internal_dim, n_actions=self._n_actions)
-        self.float_model = FloatModel(internal_dim=self.internal_dim, n_actions=self._n_actions)
-        self.q_function = QFunction(internal_dim=self.internal_dim, n_actions=self._n_actions)
+        self.encoder = Encoder(
+            internal_dim=self.internal_dim, input_dim=self._input_dimensions
+        )
+        self.decoder = Decoder(
+            internal_dim=self.internal_dim, input_dim=self._input_dimensions
+        )
+        self.transition = Transition(
+            internal_dim=self.internal_dim, n_actions=self._n_actions
+        )
+        self.float_model = FloatModel(
+            internal_dim=self.internal_dim, n_actions=self._n_actions
+        )
+        self.q_function = QFunction(
+            internal_dim=self.internal_dim, n_actions=self._n_actions
+        )
 
     def force_features(self, states, actions, encoder_model, transition_model):
         raise NotImplementedError

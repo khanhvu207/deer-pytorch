@@ -2,8 +2,9 @@ import torch
 import random
 import numpy as np
 
-SEED = 2022
-torch.manual_seed(SEED)
-torch.cuda.manual_seed(SEED)
-random.seed(SEED)
-np.random.seed(SEED)
+
+def set_seed(seed=2022):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    random.seed(seed)
+    np.random.seed(seed)

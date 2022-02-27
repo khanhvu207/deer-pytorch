@@ -14,7 +14,7 @@ from core.utils.seed_everything import *
 class MyEnv(Environment, ABC):
     VALIDATION_MODE = 0
 
-    def __init__(self, size_x, size_y, device, debug=False, **kwargs):
+    def __init__(self, size_x, size_y, device="cpu", random_start=False, debug=False, **kwargs):
         self.device = device
         self._mode = -1
         self._mode_score = 0.0
@@ -22,21 +22,29 @@ class MyEnv(Environment, ABC):
         self._size_maze_x = size_x
         self._size_maze_y = size_y
         self._higher_dim_obs = kwargs["higher_dim_obs"]
-        self.intern_dim = 2
+        self._random_start = random_start
+        self.intern_dim = 3
         self.debug = debug
 
-        self.default_agent_pos = [size_x // 2, size_y // 2]
+        self.default_agent_pos = [1, 1]
         self.create_map()
 
     def _get_agent_pos(self):
-        random_pos_x = random.randint(0, self._size_maze_x - 1)
-        random_pos_y = random.randint(0, self._size_maze_y - 1)
-        return [random_pos_x, random_pos_y]
+        if self._random_start:
+            random_pos_x = random.randint(0, self._size_maze_x - 1)
+            random_pos_y = random.randint(0, self._size_maze_y - 1)
+            return [random_pos_x, random_pos_y]
+        else:
+            return self.default_agent_pos
 
     def create_map(self):
         self._map = np.zeros((self._size_maze_x, self._size_maze_y))
+        # self._map[:, 0] = 1
+        # self._map[:, -1] = 1
+        self._map[0, :] = 1
+        self._map[-1, :] = 1
         self._pos_agent = self._get_agent_pos()
-        self._pos_goal = [self._size_maze_x - 2, self._size_maze_y - 2]
+        self._pos_goal = [self._size_maze_x - 1, self._size_maze_y - 1]
 
     def reset(self, mode):
         self.create_map()
@@ -72,26 +80,25 @@ class MyEnv(Environment, ABC):
         # NOTE: x is vertical axis
         if action == 0:
             new_x = _modulo(new_x - 1, self._size_maze_x)
-            # new_x -= 1
         elif action == 1:
             new_x = _modulo(new_x + 1, self._size_maze_x)
-            # new_x += 1
         elif action == 2:
             new_y = _modulo(new_y - 1, self._size_maze_y)
-            # new_y -= 1
         elif action == 3:
             new_y = _modulo(new_y + 1, self._size_maze_y)
-            # new_y += 1
 
         # If the next position is unoccupied
         if self._map[new_x, new_y] == 0:
             self._pos_agent[0] = new_x
             self._pos_agent[1] = new_y
 
-        # There is no reward in this simple environment
         reward = 0
-        self._mode_score += reward
+        # if self._pos_agent[0] == self._pos_goal[0] and self._pos_agent[1] == self._pos_goal[1]:
+        #     reward = 1.0
+        # else:
+        #     reward = -0.1
 
+        self._mode_score += reward
         return reward
 
     def get_input_dims(self):
@@ -109,12 +116,14 @@ class MyEnv(Environment, ABC):
     def observe(self):
         obs = copy.deepcopy(self._map)
         obs[self._pos_agent[0], self._pos_agent[1]] = 0.5
+        # obs[self._pos_goal[0], self._pos_goal[1]] = 1.0
 
         if self._higher_dim_obs:
             obs = self.get_higher_dim_obs([self._pos_agent], [self._pos_goal])
 
         if self.debug is True:
             plt.imshow(obs, cmap="gray_r")
+            plt.savefig("maze.pdf", dpi=300)
             plt.show()
 
         return [obs]
@@ -154,6 +163,8 @@ class MyEnv(Environment, ABC):
         # part of the environment could not be explored.
         #        if((self._pos_agent[0]<=1 and self._cur_action==0) ):
         #            return True
+        # if self._pos_agent[0] == self._pos_goal[0] and self._pos_agent[1] == self._pos_goal[1]:
+        #     return True
         return False
 
     def summarize_performance(self, test_data_set, learning_algo, *args, **kwargs):
@@ -179,14 +190,15 @@ class MyEnv(Environment, ABC):
         all_possible_abs_states = learning_algo.encoder(all_possible_inputs)
         all_possible_abs_states = all_possible_abs_states.detach().cpu().numpy()
 
-        # if not self.in_terminal_state():
-        #     self._mode_episode_count += 1
-        # print(
-        #     "== Mean score per episode is {} over {} episodes ==".format(
-        #         self._mode_score / (self._mode_episode_count + 0.0001),
-        #         self._mode_episode_count,
-        #     )
-        # )
+        if not self.in_terminal_state():
+            self._mode_episode_count += 1
+
+        print(
+            "== Mean score per episode is {} over {} episodes ==".format(
+                self._mode_score / (self._mode_episode_count + 0.0001),
+                self._mode_episode_count,
+            )
+        )
 
         # cm.ScalarMappable(cmap=cm.jet)
         # abs_states = abs_states.detach().cpu().numpy()
@@ -346,11 +358,6 @@ class MyEnv(Environment, ABC):
             )
             axes_lims = [ax.get_xlim(), ax.get_ylim(), ax.get_zlim()]
 
-        # if self.intern_dim == 2:
-        #     axes_lims = [ax.get_xlim(), ax.get_ylim()]
-        # else:
-        #     axes_lims = [ax.get_xlim(), ax.get_ylim(), ax.get_zlim()]
-
         # Plot the legend for transition estimates
         box1b = TextArea(
             " Estimated transitions (action 0, 1, 2 and 3): ", textprops=dict(color="k")
@@ -387,16 +394,18 @@ class MyEnv(Environment, ABC):
 
 
 if __name__ == "__main__":
-    env = MyEnv(size_x=4,
-                size_y=4,
+    env = MyEnv(size_x=8,
+                size_y=8,
+                random_start=False,
                 higher_dim_obs=False,
                 debug=True,
-                device="cuda")
+                device="cpu")
+    env.act(2)
     print(env.observe())
 
     # import math
     # mod_pi = lambda v: (v + math.pi) % (2 * math.pi) - math.pi
-    # x = np.arange(-20, 20, step=0.1)
+    # x = np.arrange(-20, 20, step=0.1)
     # y = np.array(list(map(mod_pi, x)))
     # z = np.fmod(x, 2 * math.pi)
     # plt.plot(x, y, label="correct")

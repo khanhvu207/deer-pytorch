@@ -54,17 +54,17 @@ class NeuralAgent(object):
     """
 
     def __init__(
-        self,
-        environment: Environment,
-        learning_algo,
-        replay_memory_size=1000000,
-        replay_start_size=None,
-        batch_size=32,
-        random_state=np.random.RandomState(),
-        exp_priority: bool = False,
-        train_policy=None,
-        test_policy=None,
-        only_full_history=True,
+            self,
+            environment: Environment,
+            learning_algo,
+            replay_memory_size=1000000,
+            replay_start_size=None,
+            batch_size=32,
+            random_state=np.random.RandomState(),
+            exp_priority: bool = False,
+            train_policy=None,
+            test_policy=None,
+            only_full_history=True,
     ):
         inputDims = environment.get_input_dims()
 
@@ -92,7 +92,7 @@ class NeuralAgent(object):
             only_full_history=self._only_full_history,
         )
         self._tmp_dataset = None  # Will be created by startTesting() when necessary
-        self._mode = -1
+        self._mode = -1  # Training mode by default
         self._totalModeNbrEpisode = 0
         self._total_mode_reward = 0
         self._training_loss_averages = []
@@ -483,13 +483,13 @@ class NeuralAgent(object):
             Reward obtained for the transition
         """
 
-        action, V = self._chooseAction()
+        action, value = self._chooseAction()
 
         reward = 0
         for i in range(self.sticky_action):
             reward += self._environment.act(action)
 
-        return V, action, reward
+        return value, action, reward
 
     def _addSample(self, ponctualObs, action, reward, is_terminal):
         if self._mode != -1:
@@ -550,12 +550,12 @@ class DataSet(object):
     """A replay memory consisting of circular buffers for observations, actions, rewards and terminals."""
 
     def __init__(
-        self,
-        env: Environment,
-        random_state=None,
-        max_size=1000000,
-        use_priority=False,
-        only_full_history=True,
+            self,
+            env: Environment,
+            random_state=None,
+            max_size=1000000,
+            use_priority=False,
+            only_full_history=True,
     ):
         """Initializer.
         Parameters
@@ -719,8 +719,8 @@ class DataSet(object):
             first_terminal = 1
             while first_terminal < self._max_history_size + self.sticky_action - 1:
                 if (
-                    self._terminals[rndValidIndex - first_terminal] == True
-                    or first_terminal > rndValidIndex
+                        self._terminals[rndValidIndex - first_terminal] == True
+                        or first_terminal > rndValidIndex
                 ):
                     break
                 first_terminal += 1
@@ -867,11 +867,11 @@ class DataSet(object):
         for rndValidIndex in rndValidIndices:
             first_terminal = 1
             while (
-                first_terminal < self._max_history_size + self.sticky_action * nstep - 1
+                    first_terminal < self._max_history_size + self.sticky_action * nstep - 1
             ):
                 if (
-                    self._terminals[rndValidIndex - first_terminal] == True
-                    or first_terminal > rndValidIndex
+                        self._terminals[rndValidIndex - first_terminal] == True
+                        or first_terminal > rndValidIndex
                 ):
                     break
                 first_terminal += 1
@@ -911,7 +911,7 @@ class DataSet(object):
                     -1
                 ]:  # rndValidIndices[i] >= self.n_elems - 1 or terminals[i]:
                     observations[input][
-                        rndValidIndices[i] : rndValidIndices[i] + self.sticky_action + 1
+                    rndValidIndices[i]: rndValidIndices[i] + self.sticky_action + 1
                     ] = 0
 
         if self._use_priority:
@@ -1040,12 +1040,12 @@ class CircularBuffer(object):
             n_splits = 10
             for i in range(n_splits):
                 self._data[
-                    i * (self._size) // n_splits : (i + 1) * (self._size) // n_splits
+                i * (self._size) // n_splits: (i + 1) * (self._size) // n_splits
                 ] = self._data[
                     (self._lb - 1)
-                    + i * (self._size) // n_splits : (self._lb - 1)
-                    + (i + 1) * (self._size) // n_splits
-                ]
+                    + i * (self._size) // n_splits: (self._lb - 1)
+                                                    + (i + 1) * (self._size) // n_splits
+                    ]
             self._lb = 0
             self._ub = self._size
             self._cur = self._size  # OLD self._size - 1
@@ -1061,9 +1061,9 @@ class CircularBuffer(object):
 
     def getSlice(self, start, end=sys.maxsize):
         if end == sys.maxsize:
-            return self._data[self._lb + start : self._cur]
+            return self._data[self._lb + start: self._cur]
         else:
-            return self._data[self._lb + start : self._lb + end]
+            return self._data[self._lb + start: self._lb + end]
 
     def getLowerBound(self):
         return self._lb

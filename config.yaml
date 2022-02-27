@@ -1,25 +1,24 @@
 experiment_args:
   steps_per_epoch: 5000
-  epochs: 10
+  epochs: 20
   steps_per_test: 5000
 
 env_args:
   env_name: "loop_maze_full"
-  size_x: 5
-  size_y: 5
+  size_x: 8
+  size_y: 8
+  random_start: True
   higher_dim_obs: False
 
 train_args:
-  internal_dim: 2
-  update_rule: 'rmsprop'
+  internal_dim: 3
+  update_rule: 'adamw'
   learning_rate: 0.0005
-  learning_rate_decay: 0.5
-  rms_decay: 0.9
-  rms_epsilon: 0.0001
-  momentum: 0
-  clip_norm: 1.0
-  beta2: 0.1
-  C: 2
+  learning_rate_decay: 0.9
+  clip_norm:
+  beta1: 1.0
+  beta2: 0.0
+  C: 5
   radius: 1.0
   epsilon_start: 1.0
   epsilon_min: 1.0
