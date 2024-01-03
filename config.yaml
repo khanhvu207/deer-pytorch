@@ -1,0 +1,38 @@
+experiment_args:
+  steps_per_epoch: 5000
+  epochs: 10
+  steps_per_test: 5000
+
+env_args:
+  env_name: "loop_maze_full"
+  size_x: 5
+  size_y: 5
+  higher_dim_obs: False
+
+train_args:
+  internal_dim: 2
+  update_rule: 'rmsprop'
+  learning_rate: 0.0005
+  learning_rate_decay: 0.5
+  rms_decay: 0.9
+  rms_epsilon: 0.0001
+  momentum: 0
+  clip_norm: 1.0
+  beta2: 0.1
+  C: 2
+  radius: 1.0
+  epsilon_start: 1.0
+  epsilon_min: 1.0
+  epsilon_decay: 10000
+  update_frequency: 1
+  replay_memory_size: 1000000
+  batch_size: 32
+  freeze_interval: 1000
+  deterministic: True
+  discount: 0.9
+  discount_inc: 1
+  discount_max: 0.99
+  device: 'cpu'
+
+logger_args:
+  online_mode: False
