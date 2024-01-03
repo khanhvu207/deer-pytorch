@@ -11,9 +11,9 @@
 
 <div align="center">
     <div class="image-container">
-        <img src="experiments/loop_maze/maze.png" width="300">
-        <img src="experiments/loop_maze/%5Bgood%5D%204x4%20maze/fig_base10000-1.png" width="300">
-        <img src="experiments/loop_maze/%5Bgood%5D%205x5/fig_base35000-1.png" width="300">
+        <img src="experiments/loop_maze/maze.png" width="200">
+        <img src="experiments/loop_maze/%5Bgood%5D%204x4%20maze/fig_base10000-1.png" width="200">
+        <img src="experiments/loop_maze/%5Bgood%5D%205x5/fig_base35000-1.png" width="200">
     </div>
 </div>
 
